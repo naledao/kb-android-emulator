@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   CarFront,
@@ -22,17 +23,17 @@ import { Spinner, useConfirm } from './UI.jsx'
 import * as api from '../api.js'
 
 const CORE_TOOLS = [
-  { id: 'emulator', name: 'Android Emulator', desc: 'Core emulator engine (required)', icon: <Cpu size={14} />, required: true },
-  { id: 'platform-tools', name: 'Platform Tools (ADB/Fastboot)', desc: 'ADB, fastboot, and platform utilities', icon: <ShieldCheck size={14} />, required: true }
+  { id: 'emulator', nameKey: 'sdk_core_emulator', icon: <Cpu size={14} />, required: true },
+  { id: 'platform-tools', nameKey: 'sdk_core_platform_tools', icon: <ShieldCheck size={14} />, required: true }
 ]
 
 const TABS = [
-  { id: 'stable_playstore', label: 'Stable (Play Store)', icon: <Smartphone size={12} /> },
-  { id: 'stable_google', label: 'Stable (Google APIs / AOSP)', icon: <Sparkles size={12} /> },
-  { id: 'beta', label: 'Beta / Previews', icon: <Cpu size={12} /> },
-  { id: 'tv', label: 'Android TV', icon: <Tv size={12} /> },
-  { id: 'wear', label: 'Wear OS', icon: <Watch size={12} /> },
-  { id: 'automotive', label: 'Automotive', icon: <CarFront size={12} /> },
+  { id: 'stable_playstore', labelKey: 'sdk_tab_stable_playstore', icon: <Smartphone size={12} /> },
+  { id: 'stable_google', labelKey: 'sdk_tab_stable_google', icon: <Sparkles size={12} /> },
+  { id: 'beta', labelKey: 'sdk_tab_beta', icon: <Cpu size={12} /> },
+  { id: 'tv', labelKey: 'sdk_device_tv', icon: <Tv size={12} /> },
+  { id: 'wear', labelKey: 'sdk_device_wear', icon: <Watch size={12} /> },
+  { id: 'automotive', labelKey: 'sdk_device_automotive', icon: <CarFront size={12} /> },
 ]
 
 // Helper to parse package metadata dynamically and future-proof it
@@ -67,63 +68,50 @@ function parseImageDetails(img) {
     androidVer = "11";
   } else if (apiLevel > 0) {
     androidVer = String(apiLevel - 20 > 0 ? apiLevel - 20 : apiLevel);
-  } else {
-    androidVer = "Preview";
   }
 
   const isWear = id.includes('wear') || name.toLowerCase().includes('wear');
   const isTv = id.includes('tv') || id.includes('google-tv') || name.toLowerCase().includes('tv');
   const isAuto = id.includes('automotive') || name.toLowerCase().includes('auto');
-  let deviceType = "Phone / Tablet";
-  let typeLabel = "Phone";
+  let deviceTypeKey = "sdk_device_phone";
   if (isWear) {
-    deviceType = "Wear OS Watch";
-    typeLabel = "Wear OS";
+    deviceTypeKey = "sdk_device_wear";
   } else if (isTv) {
-    deviceType = "Android TV";
-    typeLabel = "Android TV";
+    deviceTypeKey = "sdk_device_tv";
   } else if (isAuto) {
-    deviceType = "Automotive Car";
-    typeLabel = "Automotive";
+    deviceTypeKey = "sdk_device_automotive";
   }
 
   // System services/APIs
-  let services = "Google APIs";
-  let shortServices = "Google APIs";
-  if (id.includes('playstore') || name.toLowerCase().includes('playstore') || name.toLowerCase().includes('play store')) {
-    services = "Google Play Store (with Services)";
-    shortServices = "Play Store";
+  const isPlayStore = id.includes('playstore') || name.toLowerCase().includes('playstore') || name.toLowerCase().includes('play store');
+  let servicesKey;
+  if (isPlayStore) {
+    servicesKey = "sdk_services_playstore";
   } else if (id.includes('google-tv') || id.includes('google_tv') || name.toLowerCase().includes('google tv') || name.toLowerCase().includes('google-tv')) {
-    services = "Google TV (with Play Services)";
-    shortServices = "Google TV";
+    servicesKey = "sdk_services_google_tv";
   } else if (id.includes('android-tv') || id.includes('android_tv')) {
-    services = "Android TV (with Services)";
-    shortServices = "Android TV";
+    servicesKey = "sdk_services_android_tv";
   } else if (id.includes('google_apis') || name.toLowerCase().includes('google apis')) {
-    services = "Google APIs Developer Image";
-    shortServices = "Google APIs";
+    servicesKey = "sdk_services_google_apis";
   } else {
-    services = "AOSP Pure Android";
-    shortServices = "AOSP";
+    servicesKey = "sdk_services_aosp";
   }
 
   const is16k = id.includes('ps16k') || id.includes('16k') || id.includes('16kb');
   // API levels indicating Beta/Preview are identified by tags like 'preview' or 'beta'
   const isPreview = id.includes('preview') || id.includes('beta') || name.toLowerCase().includes('preview') || name.toLowerCase().includes('beta') || is16k;
-  const stability = isPreview ? "Beta / Preview" : "Stable";
 
   return {
     apiLevel,
     androidVer,
-    typeLabel,
-    services,
-    shortServices,
+    deviceTypeKey,
+    servicesKey,
+    isPlayStore,
     isWear,
     isTv,
     isAuto,
     is16k,
-    isPreview,
-    stability
+    isPreview
   };
 }
 
@@ -137,6 +125,7 @@ export function SdkManager({
   errors,
   setErrors
 }) {
+  const { t } = useTranslation()
   const [systemImages, setSystemImages] = useState([])
   const [loadingImages, setLoadingImages] = useState(false)
   const [search, setSearch] = useState('')
@@ -169,11 +158,11 @@ export function SdkManager({
 
     switch (activeTab) {
       case 'stable_playstore':
-        return details.stability === 'Stable' && details.shortServices === 'Play Store' && !isWear && !isTv && !isAuto;
+        return !details.isPreview && details.isPlayStore && !isWear && !isTv && !isAuto;
       case 'stable_google':
-        return details.stability === 'Stable' && details.shortServices !== 'Play Store' && !isWear && !isTv && !isAuto;
+        return !details.isPreview && !details.isPlayStore && !isWear && !isTv && !isAuto;
       case 'beta':
-        return details.stability === 'Beta / Preview' && !isWear && !isTv && !isAuto;
+        return details.isPreview && !isWear && !isTv && !isAuto;
       case 'tv':
         return isTv;
       case 'wear':
@@ -249,31 +238,31 @@ export function SdkManager({
     try {
       const result = await api.installPackage({ packageId: pkgId })
       if (!result.ok) {
-        setErrors(s => ({ ...s, [pkgId]: result.error || 'Installation failed' }))
+        setErrors(s => ({ ...s, [pkgId]: result.error ? t('sdk_install_error', { error: result.error }) : t('sdk_install_failed') }))
       } else {
         if (refreshStatus) await refreshStatus()
         await loadSdkImages()
       }
     } catch (e) {
-      setErrors(s => ({ ...s, [pkgId]: e.toString() }))
+      setErrors(s => ({ ...s, [pkgId]: t('sdk_operation_error', { error: String(e) }) }))
     }
     setInstalling(s => ({ ...s, [pkgId]: false }))
   }
 
   const uninstallPkg = async (pkgId) => {
-    if (!await confirm("Are you sure you want to delete this system image?\n\nThis will remove the system files from your disk. Any created devices using this image won't be able to boot until reinstalled.")) return
+    if (!await confirm(t('sdk_delete_confirm'))) return
     setInstalling(s => ({ ...s, [pkgId]: true }))
     setErrors(s => ({ ...s, [pkgId]: null }))
     try {
       const result = await api.uninstallPackage({ packageId: pkgId })
       if (!result.ok) {
-        setErrors(s => ({ ...s, [pkgId]: result.error || 'Deletion failed' }))
+        setErrors(s => ({ ...s, [pkgId]: result.error ? t('sdk_delete_error', { error: result.error }) : t('sdk_delete_failed') }))
       } else {
         if (refreshStatus) await refreshStatus()
         await loadSdkImages()
       }
     } catch (e) {
-      setErrors(s => ({ ...s, [pkgId]: e.toString() }))
+      setErrors(s => ({ ...s, [pkgId]: t('sdk_operation_error', { error: String(e) }) }))
     }
     setInstalling(s => ({ ...s, [pkgId]: false }))
   }
@@ -306,14 +295,13 @@ export function SdkManager({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="alert alert-warn">
-          <AlertTriangle size={14} style={{ marginRight: 6 }} /> <strong>Setup not complete!</strong> You must install <strong>JDK</strong> and <strong>cmdline-tools</strong> first before using the SDK Manager.
-          Go to the <strong>Setup / Install</strong> page in the sidebar and complete all steps.
+          <AlertTriangle size={14} style={{ marginRight: 6 }} /> {t('sdk_setup_incomplete')}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            { label: 'Step 1: Portable OpenJDK 21', done: status?.jdk_installed },
-            { label: 'Step 2: Android cmdline-tools', done: status?.cmdline_installed },
-            { label: 'Step 3: Use SDK Manager below', done: false },
+            { label: t('sdk_step_jdk'), done: status?.jdk_installed },
+            { label: t('sdk_step_cmdline'), done: status?.cmdline_installed },
+            { label: t('sdk_step_manager'), done: false },
           ].map((s, i) => (
             <div key={i} className="pkg-row">
               <span style={{ fontSize: 20, display: 'inline-flex', alignItems: 'center' }}>{s.done ? <CheckCircle2 size={18} /> : <RefreshCw size={18} style={{ opacity: 0.7 }} />}</span>
@@ -343,14 +331,14 @@ export function SdkManager({
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                 <CheckCircle2 size={14} style={{ color: '#34d399' }} />
-                <span><strong>Emulator Core Engine</strong> is fully operational and ready.</span>
+                <span>{t('sdk_core_ready')}</span>
               </div>
               <button
                 className="btn btn-ghost btn-sm"
                 style={{ padding: '3px 8px', fontSize: 10 }}
                 onClick={() => setShowCoreDetails(!showCoreDetails)}
               >
-                {showCoreDetails ? 'Hide Details' : 'Show Core Tools'}
+                {showCoreDetails ? t('sdk_hide_details') : t('sdk_show_core_tools')}
               </button>
             </div>
           ) : (
@@ -363,7 +351,7 @@ export function SdkManager({
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                 <AlertTriangle size={14} style={{ color: '#fbbf24' }} />
-                <span><strong>Core Emulator Tools are missing!</strong> You must download them to run or create virtual devices.</span>
+                <span>{t('sdk_core_missing')}</span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {CORE_TOOLS.map(pkg => {
@@ -374,7 +362,7 @@ export function SdkManager({
                   const isInstalling = installing[pkg.id];
                   return (
                     <button key={pkg.id} className="btn btn-sm btn-primary" onClick={() => installPkg(pkg.id)} disabled={isInstalling}>
-                      {isInstalling ? <Spinner size={10} /> : <><Download size={10} style={{ marginRight: 4 }} /> Download</>} {pkg.name}
+                      {isInstalling ? <><Spinner size={10} /> {t(pkg.nameKey)}</> : <><Download size={10} style={{ marginRight: 4 }} /> {t('sdk_download_package', { name: t(pkg.nameKey) })}</>}
                     </button>
                   );
                 })}
@@ -406,13 +394,13 @@ export function SdkManager({
                       <span style={{ fontSize: 16 }}>{pkg.icon}</span>
                       <div style={{ flex: 1 }}>
                         <div className="pkg-name" style={{ fontSize: 12 }}>
-                          {pkg.name}
-                          {isInstalled && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Installed</span>}
+                          {t(pkg.nameKey)}
+                          {isInstalled && <span className="badge badge-ok" style={{ marginLeft: 8 }}>{t('installed')}</span>}
                         </div>
                       </div>
                       {!isInstalled && (
                         <button className="btn btn-sm btn-primary" onClick={() => installPkg(pkg.id)} disabled={!!isInstalling}>
-                          {isInstalling ? <Spinner size={10} /> : <><Download size={10} style={{ marginRight: 4 }} /> Install</>}
+                          {isInstalling ? <Spinner size={10} /> : <><Download size={10} style={{ marginRight: 4 }} /> {t('install')}</>}
                         </button>
                       )}
                     </div>
@@ -434,7 +422,7 @@ export function SdkManager({
           if (installedImages.length === 0) return null;
           return (
             <div className="section">
-              <div className="section-title"><HardDrive size={14} style={{ marginRight: 6 }} /> Downloaded OS Images ({installedImages.length})</div>
+              <div className="section-title"><HardDrive size={14} style={{ marginRight: 6 }} /> {t('sdk_installed_images', { count: installedImages.length })}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {installedImages.map(img => {
                   const isInstalling = installing[img.id];
@@ -453,20 +441,20 @@ export function SdkManager({
                         </span>
                         <div style={{ flex: 1 }}>
                           <div className="pkg-name" style={{ fontSize: 12, fontWeight: 600 }}>
-                            Android {details.androidVer} ({details.typeLabel})
+                            {t('sdk_image_title', { version: details.androidVer || t('sdk_preview_version'), type: t(details.deviceTypeKey) })}
                             <span className={`badge ${details.isPreview ? 'badge-warn' : 'badge-ok'}`} style={{ marginLeft: 8, fontSize: 8 }}>
-                              {details.stability}
+                              {t(details.isPreview ? 'sdk_preview' : 'sdk_stable')}
                             </span>
                             {details.is16k && <span className="badge badge-error" style={{ marginLeft: 4, fontSize: 8 }}>16 KB</span>}
                           </div>
                           <div className="pkg-desc" style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
-                            {details.services} · <span className="font-mono">API {details.apiLevel}</span>
+                            {t(details.servicesKey)} · <span className="font-mono">API {details.apiLevel}</span>
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="btn btn-sm btn-ghost" style={{ padding: '4px 8px', fontSize: 10 }}
                             onClick={() => installPkg(img.id)} disabled={!!isInstalling}>
-                            {isInstalling ? <Spinner size={10} /> : <><RefreshCw size={10} style={{ marginRight: 4 }} /> Repair</>}
+                            {isInstalling ? <Spinner size={10} /> : <><RefreshCw size={10} style={{ marginRight: 4 }} /> {t('sdk_repair')}</>}
                           </button>
                           <button className="btn btn-sm btn-ghost" style={{
                             padding: '4px 8px',
@@ -475,14 +463,14 @@ export function SdkManager({
                             borderColor: 'rgba(239, 68, 68, 0.15)'
                           }}
                             onClick={() => uninstallPkg(img.id)} disabled={!!isInstalling}>
-                            <Trash2 size={10} style={{ marginRight: 4 }} /> Delete
+                            <Trash2 size={10} style={{ marginRight: 4 }} /> {t('delete')}
                           </button>
                         </div>
                       </div>
                       {isInstalling && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', padding: '0 8px 6px 8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-accent)' }}>
-                            <span>Modifying system files...</span>
+                            <span>{t('sdk_modifying')}</span>
                             <span className="font-mono">{pct}%</span>
                           </div>
                           <div className="progress-wrap" style={{ height: 4 }}>
@@ -502,7 +490,7 @@ export function SdkManager({
 
         {/* ─── Part 2: System Images Manager ─── */}
         <div className="section">
-          <div className="section-title"><Download size={14} style={{ marginRight: 6 }} /> Browse & Download OS Images</div>
+          <div className="section-title"><Download size={14} style={{ marginRight: 6 }} /> {t('sdk_browse')}</div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
             {/* Tabs */}
@@ -515,7 +503,7 @@ export function SdkManager({
                   style={{ padding: '6px 10px', fontSize: 11 }}
                 >
                   <span style={{ marginRight: 4 }}>{tab.icon}</span>
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </button>
               ))}
             </div>
@@ -523,11 +511,11 @@ export function SdkManager({
             <div className="flex gap-2">
               {!status?.licenses_accepted && (
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '5px 10px' }} onClick={acceptLicenses} disabled={!!installing._licenses}>
-                  {installing._licenses ? <Spinner size={10} /> : <><ShieldCheck size={10} style={{ marginRight: 4 }} /> Accept SDK Licenses</>}
+                  {installing._licenses ? <Spinner size={10} /> : <><ShieldCheck size={10} style={{ marginRight: 4 }} /> {t('sdk_accept_licenses')}</>}
                 </button>
               )}
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '5px 10px' }} onClick={loadSdkImages} disabled={loadingImages}>
-                {loadingImages ? <Spinner size={10} /> : <><RefreshCw size={10} style={{ marginRight: 4 }} /> Sync Repo</>}
+                {loadingImages ? <Spinner size={10} /> : <><RefreshCw size={10} style={{ marginRight: 4 }} /> {t('sdk_sync_repo')}</>}
               </button>
             </div>
           </div>
@@ -537,7 +525,7 @@ export function SdkManager({
             <Search size={12} style={{ color: 'var(--text-muted)' }} />
             <input
               className="form-input search-input"
-              placeholder="Filter system images (e.g. '35', 'google_apis', 'playstore')..."
+              placeholder={t('sdk_search')}
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ padding: '6px 10px', fontSize: 12, width: '100%' }}
@@ -548,13 +536,13 @@ export function SdkManager({
           {loadingImages ? (
             <div className="flex items-center justify-center" style={{ padding: 40, gap: 12 }}>
               <Spinner size={16} />
-              <span className="text-muted" style={{ fontSize: 12 }}>Fetching latest package manifests from Google APIs...</span>
+              <span className="text-muted" style={{ fontSize: 12 }}>{t('sdk_loading')}</span>
             </div>
           ) : filteredImages.length === 0 ? (
             <div className="empty-state" style={{ padding: '24px 10px' }}>
               <div className="empty-icon" style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PackageOpen size={24} /></div>
-              <div className="empty-title" style={{ fontSize: 12 }}>No images found matching criteria</div>
-              <div className="empty-desc" style={{ fontSize: 11 }}>Try clicking "Sync Repo" or clearing your search filter.</div>
+              <div className="empty-title" style={{ fontSize: 12 }}>{t('sdk_no_matches')}</div>
+              <div className="empty-desc" style={{ fontSize: 11 }}>{t('sdk_no_matches_hint')}</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: '55vh', overflowY: 'auto', paddingRight: 4 }}>
@@ -565,7 +553,7 @@ export function SdkManager({
 
                 // Format Title Dynamically
                 const firstDetails = parseImageDetails(groupImages[0]);
-                const versionTitle = `Android ${firstDetails.androidVer} (API ${groupKey})`;
+                const versionTitle = t('sdk_version_title', { version: firstDetails.androidVer || t('sdk_preview_version'), api: groupKey });
 
                 return (
                   <div key={groupKey} style={{
@@ -594,11 +582,11 @@ export function SdkManager({
                           {versionTitle}
                         </span>
                         <span className="badge" style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(255,255,255,0.03)', color: 'var(--text-secondary)' }}>
-                          {groupImages.length} {groupImages.length === 1 ? 'image' : 'images'}
+                          {t('sdk_image_count', { count: groupImages.length })}
                         </span>
                         {installedCount > 0 && (
                           <span className="badge badge-ok" style={{ fontSize: 8, padding: '1px 4px' }}>
-                            {installedCount} Downloaded
+                            {t('sdk_downloaded_count', { count: installedCount })}
                           </span>
                         )}
                       </div>
@@ -633,28 +621,28 @@ export function SdkManager({
                               <div className="pkg-row" style={{ padding: '6px 8px', background: 'transparent' }}>
                                 <div style={{ flex: 1 }}>
                                   <div className="pkg-name" style={{ fontSize: 11, fontWeight: 600 }}>
-                                    {details.services}
-                                    {isInstalled && <span className="badge badge-ok" style={{ marginLeft: 8, padding: '1px 4px', fontSize: 8 }}>Ready</span>}
+                                    {t(details.servicesKey)}
+                                    {isInstalled && <span className="badge badge-ok" style={{ marginLeft: 8, padding: '1px 4px', fontSize: 8 }}>{t('ready')}</span>}
                                     {details.is16k && <span className="badge badge-error" style={{ marginLeft: 4, padding: '1px 4px', fontSize: 8 }}>16 KB</span>}
                                   </div>
                                   <div className="font-mono text-muted" style={{ fontSize: 8, marginTop: 1 }}>{img.id}</div>
                                 </div>
                                 {isInstalled ? (
                                   <button className="btn btn-sm btn-ghost" style={{ padding: '2px 6px', fontSize: 9, color: 'var(--text-green)', borderColor: 'transparent', opacity: 0.8 }} disabled>
-                                    <CheckCircle2 size={10} style={{ marginRight: 4 }} /> Ready
+                                    <CheckCircle2 size={10} style={{ marginRight: 4 }} /> {t('ready')}
                                   </button>
                                 ) : (
                                   <button className={`btn btn-sm ${isInstalling ? 'btn-ghost' : 'btn-primary'}`}
                                     onClick={() => installPkg(img.id)} disabled={!!isInstalling}
                                     style={{ padding: '4px 8px', fontSize: 10 }}>
-                                    {isInstalling ? <Spinner size={8} /> : <><Download size={10} style={{ marginRight: 4 }} /> Download</>}
+                                    {isInstalling ? <Spinner size={8} /> : <><Download size={10} style={{ marginRight: 4 }} /> {t('download')}</>}
                                   </button>
                                 )}
                               </div>
                               {isInstalling && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', padding: '0 6px 4px 6px' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-accent)' }}>
-                                    <span>Downloading system image...</span>
+                                    <span>{t('sdk_downloading_image')}</span>
                                     <span className="font-mono">{pct}%</span>
                                   </div>
                                   <div className="progress-wrap" style={{ height: 3 }}>

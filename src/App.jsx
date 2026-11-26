@@ -7,6 +7,7 @@ import { GpuSettings } from './components/GpuSettings.jsx'
 import { Settings } from './components/Settings.jsx'
 import * as api from './api.js'
 import { useTranslation } from 'react-i18next'
+import i18n from './i18n.js'
 import {
   Sliders,
   Package,
@@ -40,12 +41,7 @@ export default function App() {
   const [logs, setLogs] = useState([])
   const [emulatorLogs, setEmulatorLogs] = useState({})
 
-  const { t, i18n } = useTranslation()
-
-  const changeLang = (newLang) => {
-    i18n.changeLanguage(newLang)
-    localStorage.setItem('app_lang', newLang)
-  }
+  const { t } = useTranslation()
 
   const NAV = [
     { id: 'setup', icon: <Sliders size={14} />, label: t('nav_setup') },
@@ -110,7 +106,7 @@ export default function App() {
       }))
     })
     const offEmulatorExit = api.on('emulator-exit', ({ name }) => {
-      toast(`Emulator "${name}" stopped`, 'info')
+      toast(i18n.t('emulator_exited', { name }), 'info')
       refreshAvds()
     })
     return () => { offLog?.(); offProgress?.(); offEmulatorLog?.(); offEmulatorExit?.() }
@@ -204,17 +200,17 @@ export default function App() {
       rawLaunch,
     })
     if (result.ok) {
-      toast(`Launching "${name}"...`, 'info')
+      toast(t('emulator_launching', { name }), 'info')
       setTimeout(refreshAvds, 500)
     } else {
-      toast(result.error, 'error')
+      toast(t('emulator_launch_failed', { error: result.error ?? t('unknown_error') }), 'error')
     }
   }
 
   const handleStop = async (name) => {
     const result = await api.stopAvd({ name })
     if (result.ok) {
-      toast(`Stopped "${name}"`, 'info')
+      toast(t('emulator_stopped', { name }), 'info')
       setTimeout(refreshAvds, 500)
     }
   }
@@ -222,23 +218,23 @@ export default function App() {
   const handleDelete = async (name) => {
     const result = await api.deleteAvd({ name })
     if (result.ok) {
-      toast(`Deleted "${name}"`, 'success')
+      toast(t('device_deleted', { name }), 'success')
       refreshAvds()
     }
   }
 
   const handleOptimizeApps = async () => {
     setOptimizing(true)
-    toast('Starting AOT compilation for all user apps...', 'info')
+    toast(t('optimization_started'), 'info')
     try {
       const r = await api.optimizeGuestApps()
       if (r.ok) {
-        toast('Optimization completed!', 'success')
+        toast(t('optimization_complete'), 'success')
       } else {
-        toast(`Optimization failed: ${r.error || 'make sure emulator is running'}`, 'error')
+        toast(t('optimization_failed', { error: r.error || t('optimization_running_required') }), 'error')
       }
     } catch (e) {
-      toast(`Error: ${e}`, 'error')
+      toast(t('optimization_error', { error: String(e) }), 'error')
     }
     setOptimizing(false)
   }
@@ -248,11 +244,11 @@ export default function App() {
     const r = await api.installJdk()
     setInstalling(s => ({ ...s, jdk: false }))
     if (r.ok) {
-      toast('JDK installed!', 'success')
+      toast(t('setup_jdk_installed'), 'success')
     } else if (r.error && r.error.includes('cancelled')) {
-      toast('Download cancelled.', 'warn')
+      toast(t('download_cancelled'), 'warn')
     } else {
-      toast(`JDK failed: ${r.error}`, 'error')
+      toast(t('setup_jdk_failed', { error: r.error ?? t('unknown_error') }), 'error')
     }
     refreshStatus()
   }
@@ -262,11 +258,11 @@ export default function App() {
     const r = await api.installCmdlineTools()
     setInstalling(s => ({ ...s, cmdline: false }))
     if (r.ok) {
-      toast('cmdline-tools installed!', 'success')
+      toast(t('setup_cmdline_installed'), 'success')
     } else if (r.error && r.error.includes('cancelled')) {
-      toast('Download cancelled.', 'warn')
+      toast(t('download_cancelled'), 'warn')
     } else {
-      toast(`Failed: ${r.error}`, 'error')
+      toast(t('setup_cmdline_failed', { error: r.error ?? t('unknown_error') }), 'error')
     }
     refreshStatus()
   }
@@ -277,27 +273,27 @@ export default function App() {
   }
 
   const uninstallJdk = async () => {
-    if (!await confirm("Are you sure you want to uninstall Portable OpenJDK 21?\n\nThis will prevent cmdline-tools and emulators from running.")) return
+    if (!await confirm(t('setup_uninstall_jdk_confirm'))) return
     setUninstalling(s => ({ ...s, jdk: true }))
     const r = await api.uninstallJdk()
     setUninstalling(s => ({ ...s, jdk: false }))
     if (r.ok) {
-      toast('JDK uninstalled successfully!', 'success')
+      toast(t('setup_uninstall_jdk_success'), 'success')
     } else {
-      toast(`Failed to uninstall JDK: ${r.error}`, 'error')
+      toast(t('setup_uninstall_jdk_failed', { error: r.error ?? t('unknown_error') }), 'error')
     }
     refreshStatus()
   }
 
   const uninstallCmdline = async () => {
-    if (!await confirm("Are you sure you want to uninstall Android Command Line Tools?")) return
+    if (!await confirm(t('setup_uninstall_cmdline_confirm'))) return
     setUninstalling(s => ({ ...s, cmdline: true }))
     const r = await api.uninstallCmdlineTools()
     setUninstalling(s => ({ ...s, cmdline: false }))
     if (r.ok) {
-      toast('cmdline-tools uninstalled successfully!', 'success')
+      toast(t('setup_uninstall_cmdline_success'), 'success')
     } else {
-      toast(`Failed to uninstall cmdline-tools: ${r.error}`, 'error')
+      toast(t('setup_uninstall_cmdline_failed', { error: r.error ?? t('unknown_error') }), 'error')
     }
     refreshStatus()
   }
@@ -309,12 +305,12 @@ export default function App() {
       {ok ? (
         <span className="flex items-center gap-1">
           <CheckCircle2 size={10} />
-          Installed
+          {t('installed')}
         </span>
       ) : (
         <span className="flex items-center gap-1">
           <AlertTriangle size={10} />
-          Not installed
+          {t('not_installed')}
         </span>
       )}
     </span>
@@ -325,8 +321,8 @@ export default function App() {
       {/* ── Title Bar ── */}
       <div className="titlebar" data-tauri-drag-region>
         <div className="titlebar-logo">
-          <img src="/icon.png" alt="Logo" style={{ width: '20px', height: '20px', borderRadius: '4px', objectFit: 'contain' }} />
-          <span className="app-name" style={{ marginLeft: '8px' }}>KB Android Emulator</span>
+          <img src="/icon.png" alt={t('app_logo')} style={{ width: '20px', height: '20px', borderRadius: '4px', objectFit: 'contain' }} />
+          <span className="app-name" style={{ marginLeft: '8px' }}>{t('app_name')}</span>
           <span style={{ fontSize: '9px', opacity: 0.5, marginLeft: '6px', background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}>
             v{appVersion}
           </span>
@@ -342,7 +338,7 @@ export default function App() {
             {avds.filter(a => a.running).length > 0 && (
               <span className="badge badge-running flex items-center gap-1">
                 <span className="dot" />
-                {avds.filter(a => a.running).length} {t('running')}
+                {t('devices_active_count', { count: avds.filter(a => a.running).length })}
               </span>
             )}
             {/* Log capture quick-toggle — always accessible from any page */}
@@ -353,25 +349,25 @@ export default function App() {
                 const next = !logCapture
                 setLogCapture(next)
                 localStorage.setItem('emulator_log_capture', String(next))
-                toast(next ? 'Emulator log capture ON' : 'Emulator log capture OFF', 'info')
+                toast(next ? t('logs_capture_on') : t('logs_capture_off'), 'info')
               }}
-              data-tooltip={logCapture ? 'Log capture ON — click to pause' : 'Log capture OFF — click to resume'}
+              data-tooltip={t(logCapture ? 'logs_capture_pause' : 'logs_capture_resume')}
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
-              {logCapture ? <span className="flex items-center gap-1"><Play size={10} />Log ON</span> : <span className="flex items-center gap-1"><Pause size={10} />Log OFF</span>}
+              {logCapture ? <span className="flex items-center gap-1"><Play size={10} />{t('logs_on')}</span> : <span className="flex items-center gap-1"><Pause size={10} />{t('logs_off')}</span>}
             </span>
           </div>
         )}
 
         <div className="titlebar-controls">
-          <button className="titlebar-btn titlebar-btn-min" onClick={() => api.minimizeWindow()} title="Minimize" aria-label="Minimize window">
+          <button className="titlebar-btn titlebar-btn-min" onClick={() => api.minimizeWindow()} title={t('window_minimize')} aria-label={t('window_minimize_label')}>
             <span style={{ fontSize: 14, lineHeight: 1, display: 'block', marginTop: '-2px' }}>&#x2500;</span>
           </button>
           <button
             className="titlebar-btn titlebar-btn-max"
             onClick={() => api.maximizeWindow()}
-            title={isMaximized ? 'Restore' : 'Maximize'}
-            aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+            title={isMaximized ? t('window_restore') : t('window_maximize')}
+            aria-label={isMaximized ? t('window_restore_label') : t('window_maximize_label')}
           >
             {isMaximized ? (
               /* Restore icon: two overlapping rounded squares */
@@ -406,7 +402,7 @@ export default function App() {
               }} />
             )}
           </button>
-          <button className="titlebar-btn titlebar-btn-close" onClick={() => api.closeWindow()} title="Close" aria-label="Close window">
+          <button className="titlebar-btn titlebar-btn-close" onClick={() => api.closeWindow()} title={t('window_close')} aria-label={t('window_close_label')}>
             <span style={{ fontSize: 16, lineHeight: 1, display: 'block' }}>&#x2715;</span>
           </button>
         </div>
@@ -415,7 +411,7 @@ export default function App() {
       <div className="body-split">
         {/* ── Sidebar ── */}
         <aside className="sidebar">
-          <div className="sidebar-section-label">Navigation</div>
+          <div className="sidebar-section-label">{t('nav_label')}</div>
           {NAV.map(n => (
             <div key={n.id}
               className={`sidebar-item ${page === n.id ? 'active' : ''}`}
@@ -432,8 +428,8 @@ export default function App() {
             </div>
           ))}
           <div className="sidebar-footer">
-            <a href="https://github.com/kil0bit-kb/kb-android-emulator" target="_blank" rel="noopener noreferrer" className='text-muted text-sm'>KB Android Emulator</a><br />
-            <span className="text-muted" style={{ fontSize: 10 }}>Powered by Google Android SDK, Tauri & React</span>
+            <a href="https://github.com/kil0bit-kb/kb-android-emulator" target="_blank" rel="noopener noreferrer" className='text-muted text-sm'>{t('app_name')}</a><br />
+            <span className="text-muted" style={{ fontSize: 10 }}>{t('app_powered_by')}</span>
           </div>
         </aside>
 
@@ -460,10 +456,10 @@ export default function App() {
                     className="btn btn-ghost btn-sm flex items-center gap-1"
                     onClick={handleOptimizeApps}
                     disabled={optimizing || avds.filter(a => a.running).length === 0}
-                    title="Pre-compiles installed games/apps to native machine code to eliminate JIT stuttering. Requires a running emulator."
+                    title={t('devices_optimize_tooltip')}
                   >
                     <Zap size={12} />
-                    {optimizing ? 'Optimizing...' : t('devices_optimize')}
+                    {optimizing ? t('devices_optimizing') : t('devices_optimize')}
                   </button>
                   <button className="btn btn-primary flex items-center gap-1" onClick={() => setShowCreate(true)}
                     disabled={!allReady} id="btn-create-device">
@@ -476,7 +472,7 @@ export default function App() {
               {!allReady && (
                 <div className="alert alert-warn flex items-center gap-2" style={{ marginBottom: 20 }}>
                   <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                  <span>Setup is incomplete. Go to <strong>Setup / Install</strong> first.</span>
+                  <span>{t('devices_setup_required')}</span>
                 </div>
               )}
 
@@ -532,7 +528,7 @@ export default function App() {
                 />
                 : <div className="alert alert-warn flex items-center gap-2">
                   <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                  <span>Please install cmdline-tools first from the <strong>Setup</strong> page.</span>
+                  <span>{t('sdk_cmdline_required')}</span>
                 </div>
               }
             </div>
@@ -579,8 +575,8 @@ export default function App() {
                 {[
                   {
                     step: 1, key: 'jdk', icon: <Coffee size={20} />,
-                    title: 'Portable OpenJDK 21',
-                    desc: 'Eclipse Temurin JDK 21 — required to run sdkmanager and avdmanager. Stored locally, no global install.',
+                    title: t('setup_jdk_name'),
+                    desc: t('setup_jdk_description'),
                     size: '~180 MB',
                     installed: status?.jdk_installed,
                     onInstall: installJdk,
@@ -591,8 +587,8 @@ export default function App() {
                   },
                   {
                     step: 2, key: 'cmdline', icon: <Wrench size={20} />,
-                    title: 'Android Command Line Tools',
-                    desc: 'Official Google sdkmanager & avdmanager — to install emulator, platform tools, and system images.',
+                    title: t('setup_cmdline_name'),
+                    desc: t('setup_cmdline_description'),
                     size: '~130 MB',
                     installed: status?.cmdline_installed,
                     onInstall: installCmdline,
@@ -603,8 +599,8 @@ export default function App() {
                   },
                   {
                     step: 3, key: 'emulator', icon: <Bot size={20} />,
-                    title: 'Android Emulator Engine',
-                    desc: 'Install via SDK Manager → "emulator" package once cmdline-tools are ready.',
+                    title: t('setup_emulator_name'),
+                    desc: t('setup_emulator_description'),
                     size: '~300 MB',
                     installed: status?.emulator_installed,
                     onInstall: null,
@@ -620,7 +616,7 @@ export default function App() {
                         <div className={`setup-card-icon ${item.installed ? 'installed' : 'pending'}`}>
                           {item.icon}
                         </div>
-                        <div className="setup-card-badge">STEP 0{item.step}</div>
+                        <div className="setup-card-badge">{t('setup_step', { step: item.step })}</div>
                       </div>
 
                       <div className="setup-card-content">
@@ -643,9 +639,9 @@ export default function App() {
                             <button
                               className="btn-setup cancel has-tooltip"
                               onClick={() => handleCancelDownload(item.key)}
-                              data-tooltip="Cancel download"
+                              data-tooltip={t('setup_cancel_download')}
                             >
-                              <X size={12} />Cancel
+                              <X size={12} />{t('cancel')}
                             </button>
                           ) : item.uninstalling ? (
                             <button
@@ -653,16 +649,16 @@ export default function App() {
                               disabled
                               style={{ opacity: 0.75, cursor: 'not-allowed' }}
                             >
-                              <Spinner size={12} />Uninstalling…
+                              <Spinner size={12} />{t('setup_uninstalling')}
                             </button>
                           ) : item.installed ? (
                             item.onUninstall && (
                               <button
                                 className="btn-setup cancel has-tooltip"
                                 onClick={item.onUninstall}
-                                data-tooltip="Uninstall component"
+                                data-tooltip={t('setup_uninstall_component')}
                               >
-                                <Trash2 size={12} /> Uninstall
+                                <Trash2 size={12} /> {t('uninstall')}
                               </button>
                             )
                           ) : (
@@ -672,13 +668,13 @@ export default function App() {
                               disabled={item.requires || item.installed}
                               id={`btn-install-${item.key}`}
                             >
-                              {item.installed ? 'Installed' : <><Download size={12} />Install Now</>}
+                              {item.installed ? t('installed') : <><Download size={12} />{t('setup_install_now')}</>}
                             </button>
                           )
                         )}
                         {!item.onInstall && !item.installed && (
                           <button className="btn-setup secondary" onClick={() => setPage('sdk')}>
-                            Go to SDK Manager →
+                            {t('setup_go_to_sdk')}
                           </button>
                         )}
                       </div>
@@ -687,7 +683,7 @@ export default function App() {
                     {item.loading && progress[item.key] !== undefined && (
                       <div className="setup-card-progress">
                         <div className="progress-labels">
-                          <span>Downloading files...</span>
+                          <span>{t('setup_downloading')}</span>
                           <span>{progress[item.key]}%</span>
                         </div>
                         <ProgressBar value={progress[item.key]} />
@@ -697,7 +693,7 @@ export default function App() {
                     {item.requires && (
                       <div className="setup-card-lock-msg">
                         <AlertTriangle size={12} style={{ flexShrink: 0 }} />
-                        <span>Requires OpenJDK 21 (Step {item.step - 1}) to be installed first.</span>
+                        <span>{t('setup_jdk_required', { step: item.step - 1 })}</span>
                       </div>
                     )}
                   </div>
@@ -706,7 +702,7 @@ export default function App() {
                 {allReady && (
                   <div className="alert alert-success flex items-start gap-2">
                     <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                    <span>All components installed! Go to <strong>SDK Manager</strong> to install a system image, then <strong>My Devices</strong> to create your first device.</span>
+                    <span>{t('setup_complete')}</span>
                   </div>
                 )}
               </div>
@@ -750,10 +746,10 @@ export default function App() {
                     <button
                       className="btn btn-ghost btn-sm flex items-center gap-1"
                       onClick={() => setEmulatorLogs({})}
-                      title="Clear all emulator log output"
+                      title={t('logs_clear_all_tooltip')}
                     >
                       <Trash2 size={12} />
-                      Clear Log
+                      {t('logs_clear_emulator')}
                     </button>
                   )}
                   <button
@@ -764,9 +760,9 @@ export default function App() {
                       setLogCapture(next)
                       localStorage.setItem('emulator_log_capture', String(next))
                     }}
-                    title={logCapture ? 'Click to pause log capture' : 'Click to resume log capture'}
+                    title={t(logCapture ? 'logs_capture_pause' : 'logs_capture_resume')}
                   >
-                    {logCapture ? <span className="flex items-center gap-1"><Play size={12} />Capturing</span> : <span className="flex items-center gap-1"><Pause size={12} />Paused</span>}
+                    {logCapture ? <span className="flex items-center gap-1"><Play size={12} />{t('logs_capturing')}</span> : <span className="flex items-center gap-1"><Pause size={12} />{t('logs_paused')}</span>}
                   </button>
                 </div>
               </div>
@@ -790,7 +786,7 @@ export default function App() {
                 ))
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0' }}>
-                  {logCapture ? t('logs_empty') : 'Log capture is paused.'}
+                  {logCapture ? t('logs_empty') : t('logs_capture_paused')}
                 </div>
               )}
             </div>
@@ -808,7 +804,7 @@ export default function App() {
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false)
-            toast('Device created successfully!', 'success')
+            toast(t('device_created'), 'success')
             refreshAvds()
           }}
         />
@@ -820,7 +816,7 @@ export default function App() {
           onClose={() => setEditingAvd(null)}
           onSaved={() => {
             setEditingAvd(null)
-            toast('Device configuration updated!', 'success')
+            toast(t('device_updated'), 'success')
             refreshAvds()
           }}
         />

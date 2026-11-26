@@ -1,4 +1,7 @@
+use serde_json::json;
 use tauri::{Emitter, Window};
+
+use super::emit_log;
 
 #[cfg(windows)]
 #[allow(unused_imports)]
@@ -77,7 +80,12 @@ pub async fn create_avd(options: CreateAvdOptions, window: Window) -> CommandRes
     // Sanitize the AVD name (replace spaces with underscores)
     let sanitized_name = options.name.replace(" ", "_");
 
-    let _ = window.emit("log", format!("Creating AVD: {} (sanitized as: {})", options.name, sanitized_name));
+    emit_log(
+        &window,
+        "log_avd_create",
+        "info",
+        json!({ "name": options.name, "sanitized": sanitized_name }),
+    );
 
     #[cfg(windows)]
     let cmd_str = format!(
@@ -185,7 +193,7 @@ pub async fn create_avd(options: CreateAvdOptions, window: Window) -> CommandRes
         let _ = std::fs::write(&config_path, &content);
     }
 
-    let _ = window.emit("log", format!("AVD \"{}\" created successfully with high-performance config!", sanitized_name));
+    emit_log(&window, "log_avd_created", "success", json!({ "name": sanitized_name }));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -265,7 +273,7 @@ pub async fn delete_avd(name: String, window: Window) -> CommandResult {
         Err(e) => return CommandResult { ok: false, error: Some(e.to_string()), output: None },
     };
 
-    let _ = window.emit("log", format!("Deleted AVD: {}", name));
+    emit_log(&window, "log_avd_deleted", "info", json!({ "name": name }));
     CommandResult { ok: out.status.success(), error: None, output: None }
 }
 

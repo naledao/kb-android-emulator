@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 
 const modules = import.meta.glob('./localization/*.json', { eager: true });
 const resources = {};
+export const DEFAULT_LANGUAGE = 'zh-CN';
 
 for (const path in modules) {
   const match = path.match(/\/([^/]+)\.json$/);
@@ -13,11 +14,18 @@ for (const path in modules) {
   }
 }
 
+const savedLanguage = localStorage.getItem('app_lang');
+
+i18n.on('languageChanged', (language) => {
+  document.documentElement.lang = language === 'bd' ? 'bn-BD' : language;
+  document.title = i18n.t('app_title', { lng: language });
+});
+
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: localStorage.getItem('app_lang') || 'en',
+    lng: Object.hasOwn(resources, savedLanguage) ? savedLanguage : DEFAULT_LANGUAGE,
     fallbackLng: 'en',
     interpolation: {
       escapeValue: false

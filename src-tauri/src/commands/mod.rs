@@ -22,6 +22,12 @@ pub mod window;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{Emitter, Window};
+
+// Send app messages as translation keys so the UI can render them in its current language.
+fn emit_log(window: &Window, key: &str, level: &str, values: serde_json::Value) {
+    let _ = window.emit("log", serde_json::json!({ "key": key, "level": level, "values": values }));
+}
 
 // ─── Download cancellation flag ───────────────────────────────────────────────
 /// Set to true by cancel_download command; checked inside download loops.

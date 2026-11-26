@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::process::Stdio;
+use serde_json::json;
 use tauri::{Emitter, Window};
+
+use super::emit_log;
 
 #[cfg(windows)]
 #[allow(unused_imports)]
@@ -194,13 +197,13 @@ pub async fn install_jdk(window: Window) -> CommandResult {
     let archive_path = jdk_dir().join(archive_name);
     let _ = std::fs::create_dir_all(jdk_dir());
 
-    let _ = window.emit("log", "Downloading portable OpenJDK 21 (Eclipse Temurin)...");
+    emit_log(&window, "log_jdk_downloading", "info", json!({}));
 
     if let Err(e) = download_file_with_progress(JDK_URL, &archive_path, "jdk", &window).await {
         return CommandResult { ok: false, error: Some(e.to_string()), output: None };
     }
 
-    let _ = window.emit("log", "Extracting JDK...");
+    emit_log(&window, "log_jdk_extracting", "info", json!({}));
 
     #[cfg(windows)]
     {
@@ -219,7 +222,7 @@ pub async fn install_jdk(window: Window) -> CommandResult {
     }
 
     let _ = std::fs::remove_file(&archive_path);
-    let _ = window.emit("log", "JDK installed successfully!");
+    emit_log(&window, "log_jdk_installed", "success", json!({}));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -236,13 +239,13 @@ pub async fn install_cmdline_tools(window: Window) -> CommandResult {
     let zip_path = sdk_dir().join("cmdline-tools.zip");
     let _ = std::fs::create_dir_all(sdk_dir());
 
-    let _ = window.emit("log", "Downloading Android cmdline-tools from Google...");
+    emit_log(&window, "log_cmdline_downloading", "info", json!({}));
 
     if let Err(e) = download_file_with_progress(CMDLINE_URL, &zip_path, "cmdline", &window).await {
         return CommandResult { ok: false, error: Some(e.to_string()), output: None };
     }
 
-    let _ = window.emit("log", "Extracting cmdline-tools...");
+    emit_log(&window, "log_cmdline_extracting", "info", json!({}));
     let temp_dir = sdk_dir().join("cmdline-tools-temp");
     let _ = std::fs::create_dir_all(&temp_dir);
 
@@ -277,7 +280,7 @@ pub async fn install_cmdline_tools(window: Window) -> CommandResult {
         }
     }
 
-    let _ = window.emit("log", "cmdline-tools installed!");
+    emit_log(&window, "log_cmdline_installed", "success", json!({}));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -323,7 +326,7 @@ pub async fn run_sdkmanager_async(args: &[&str], task_key: &str, window: &Window
     }
     all_args.push(sdk_root_arg);
 
-    let _ = window.emit("log", format!("Running sdkmanager {}", args.join(" ")));
+    emit_log(window, "log_sdk_running", "info", json!({ "args": args.join(" ") }));
 
     #[cfg(windows)]
     let (program, cmd_args) = {
@@ -479,7 +482,7 @@ pub fn accept_licenses(window: Window) -> CommandResult {
     }
 
     let out = child.wait_with_output().unwrap();
-    let _ = window.emit("log", "SDK licenses accepted.");
+    emit_log(&window, "log_sdk_licenses_accepted", "success", json!({}));
     CommandResult { ok: out.status.success(), error: None, output: None }
 }
 
@@ -488,7 +491,7 @@ pub fn accept_licenses(window: Window) -> CommandResult {
 pub async fn install_package(package_id: String, window: Window) -> CommandResult {
     match run_sdkmanager_async(&["--install", &package_id], &package_id, &window).await {
         Ok(out) => {
-            let _ = window.emit("log", format!("Installed: {}", package_id));
+            emit_log(&window, "log_sdk_installed", "success", json!({ "id": package_id }));
             let _ = window.emit(
                 "progress",
                 serde_json::json!({ "task": package_id, "pct": 100 }),
@@ -496,7 +499,7 @@ pub async fn install_package(package_id: String, window: Window) -> CommandResul
             CommandResult { ok: true, error: None, output: Some(out) }
         }
         Err(e) => {
-            let _ = window.emit("log", format!("Failed: {}", e));
+            emit_log(&window, "log_sdk_install_failed", "error", json!({ "error": e.to_string() }));
             CommandResult { ok: false, error: Some(e.to_string()), output: None }
         }
     }
@@ -507,7 +510,7 @@ pub async fn install_package(package_id: String, window: Window) -> CommandResul
 pub async fn uninstall_package(package_id: String, window: Window) -> CommandResult {
     match run_sdkmanager_async(&["--uninstall", &package_id], &package_id, &window).await {
         Ok(out) => {
-            let _ = window.emit("log", format!("Uninstalled: {}", package_id));
+            emit_log(&window, "log_sdk_uninstalled", "success", json!({ "id": package_id }));
             let _ = window.emit(
                 "progress",
                 serde_json::json!({ "task": package_id, "pct": 100 }),
@@ -515,7 +518,7 @@ pub async fn uninstall_package(package_id: String, window: Window) -> CommandRes
             CommandResult { ok: true, error: None, output: Some(out) }
         }
         Err(e) => {
-            let _ = window.emit("log", format!("Failed to uninstall: {}", e));
+            emit_log(&window, "log_sdk_uninstall_failed", "error", json!({ "error": e.to_string() }));
             CommandResult { ok: false, error: Some(e.to_string()), output: None }
         }
     }
@@ -722,7 +725,7 @@ pub async fn fetch_sdk_packages(window: Window) -> Result<Vec<super::types::SdkP
     let mut result: Vec<super::types::SdkPackageInfo> = unique_packages.into_values().collect();
     result.sort_by(|a, b| b.id.cmp(&a.id));
     
-    let _ = window.emit("log", format!("Fetched {} system images from Google repositories.", result.len()));
+    emit_log(&window, "log_sdk_images_fetched", "info", json!({ "total": result.len() }));
     Ok(result)
 }
 
@@ -730,7 +733,7 @@ pub async fn fetch_sdk_packages(window: Window) -> Result<Vec<super::types::SdkP
 #[tauri::command]
 pub fn uninstall_jdk(window: Window) -> CommandResult {
     let dir = jdk_dir();
-    let _ = window.emit("log", "Uninstalling JDK...");
+    emit_log(&window, "log_jdk_uninstalling", "info", json!({}));
     if dir.exists() {
         if let Err(e) = std::fs::remove_dir_all(&dir) {
             return CommandResult { ok: false, error: Some(format!("Failed to delete JDK directory: {}", e)), output: None };
@@ -738,7 +741,7 @@ pub fn uninstall_jdk(window: Window) -> CommandResult {
     }
     // Re-create the empty directory so structure is maintained
     let _ = std::fs::create_dir_all(&dir);
-    let _ = window.emit("log", "JDK uninstalled successfully!");
+    emit_log(&window, "log_jdk_uninstalled", "success", json!({}));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -746,13 +749,13 @@ pub fn uninstall_jdk(window: Window) -> CommandResult {
 #[tauri::command]
 pub fn uninstall_cmdline_tools(window: Window) -> CommandResult {
     let dir = sdk_dir().join("cmdline-tools");
-    let _ = window.emit("log", "Uninstalling cmdline-tools...");
+    emit_log(&window, "log_cmdline_uninstalling", "info", json!({}));
     if dir.exists() {
         if let Err(e) = std::fs::remove_dir_all(&dir) {
             return CommandResult { ok: false, error: Some(format!("Failed to delete cmdline-tools directory: {}", e)), output: None };
         }
     }
-    let _ = window.emit("log", "cmdline-tools uninstalled successfully!");
+    emit_log(&window, "log_cmdline_uninstalled", "success", json!({}));
     CommandResult { ok: true, error: None, output: None }
 }
 

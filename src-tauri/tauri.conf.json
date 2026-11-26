@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "KB Android Emulator Manager",
+        "title": "KB 安卓模拟器管理器",
         "width": 1300,
         "height": 860,
         "minWidth": 1100,
@@ -29,6 +29,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "languages": ["SimpChinese"]
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

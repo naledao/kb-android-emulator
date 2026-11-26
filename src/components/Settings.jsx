@@ -2,12 +2,13 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { CustomSelect } from './UI.jsx'
+import { DEFAULT_LANGUAGE } from '../i18n.js'
 
 export function Settings({ 
   toast 
 }) {
   const { t, i18n } = useTranslation()
-  const currentLang = i18n.language || 'en'
+  const currentLang = i18n.language || DEFAULT_LANGUAGE
   const [draftLang, setDraftLang] = useState(currentLang)
 
   const languages = Object.keys(i18n.store?.data || {}).map(langCode => {
@@ -18,10 +19,10 @@ export function Settings({
     }
   })
 
-  const handleSave = () => {
-    i18n.changeLanguage(draftLang)
+  const handleSave = async () => {
+    const translate = await i18n.changeLanguage(draftLang)
     localStorage.setItem('app_lang', draftLang)
-    toast(t('ready') + '! Settings updated.', 'info')
+    toast(translate('settings_updated'), 'info')
   }
 
   return (

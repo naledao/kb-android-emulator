@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2, XCircle, Info, AlertTriangle, Check, ChevronDown, AlertTriangle as WarnIcon } from 'lucide-react'
 
 export function useToast() {
@@ -43,7 +44,8 @@ export function Spinner({ size = 18 }) {
   return <div className="spinner" style={{ width: size, height: size }} />
 }
 
-export function CustomSelect({ value, onChange, options = [], placeholder = 'Select', disabled = false }) {
+export function CustomSelect({ value, onChange, options = [], placeholder, disabled = false }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -68,7 +70,7 @@ export function CustomSelect({ value, onChange, options = [], placeholder = 'Sel
         onClick={() => !disabled && setOpen(o => !o)}
         disabled={disabled}
       >
-        <span className="custom-select-label">{selected?.label || placeholder}</span>
+        <span className="custom-select-label">{selected?.label || placeholder || t('select')}</span>
         <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
       </button>
 
@@ -95,6 +97,7 @@ export function CustomSelect({ value, onChange, options = [], placeholder = 'Sel
 }
 
 export function ConsoleLog({ lines = [] }) {
+  const { t } = useTranslation()
   const ref = useRef(null)
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
@@ -111,14 +114,14 @@ export function ConsoleLog({ lines = [] }) {
   return (
     <div className="console-wrap" ref={ref}>
       {lines.length === 0 && (
-        <div className="console-line text-muted">// Console output will appear here...</div>
+        <div className="console-line text-muted">{t('console_empty')}</div>
       )}
       {lines.map((line, i) => (
-        <div key={i} className={`console-line ${classify(line)}`}>
+        <div key={i} className={`console-line ${typeof line === 'string' ? classify(line) : line.level}`}>
           <span className="text-muted font-mono" style={{ userSelect: 'none', marginRight: 8 }}>
             {String(i + 1).padStart(3, '0')}
           </span>
-          {line}
+          {typeof line === 'string' ? line : t(line.key, { replace: line.values })}
         </div>
       ))}
     </div>
@@ -164,6 +167,7 @@ export function useConfirm() {
 }
 
 export function ConfirmDialog({ message, onConfirm, onCancel }) {
+  const { t } = useTranslation()
   // Close on Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onCancel() }
@@ -179,8 +183,8 @@ export function ConfirmDialog({ message, onConfirm, onCancel }) {
         </div>
         <p className="confirm-message">{message}</p>
         <div className="confirm-actions">
-          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn btn-danger" onClick={onConfirm}>Confirm</button>
+          <button className="btn btn-ghost" onClick={onCancel}>{t('cancel')}</button>
+          <button className="btn btn-danger" onClick={onConfirm}>{t('confirm')}</button>
         </div>
       </div>
     </div>

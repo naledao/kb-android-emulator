@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::process::Stdio;
+use serde_json::json;
 use tauri::{Emitter, Window};
+
+use super::emit_log;
 
 use super::avd::{auto_repair_special_configs, auto_tune_heap_before_launch, clean_stale_locks};
 use super::paths::{avd_dir, emulator_dir, sdk_dir, build_env};
@@ -123,9 +126,11 @@ pub fn launch_avd(
     let mut args = vec![];
 
     if is_raw {
-        let _ = window.emit(
-            "log",
-            format!("Launching \"{}\" in RAW / Default Mode...", name),
+        emit_log(
+            &window,
+            "log_avd_launch_raw",
+            "info",
+            json!({ "name": name }),
         );
         args.push("-avd".to_string());
         args.push(name.clone());
@@ -152,9 +157,11 @@ pub fn launch_avd(
             accelerator = "on".to_string();
         }
 
-        let _ = window.emit(
-            "log",
-            format!("Launching \"{}\" — GPU={}, accel={}", name, gpu, accelerator),
+        emit_log(
+            &window,
+            "log_avd_launch",
+            "info",
+            json!({ "name": name, "gpu": gpu, "accelerator": accelerator }),
         );
 
         let (heap_sz, growth_lim) = if is_wear {
@@ -296,9 +303,11 @@ pub fn launch_avd(
                             .args(["shell", "service", "call", "SurfaceFlinger", "1008", "i32", "1"])
                             .output();
                         
-                        let _ = window_clone3.emit(
-                            "log",
-                            format!("Speed Mode applied to \"{}\": GPU composition forced.", name_clone3),
+                        emit_log(
+                            &window_clone3,
+                            "log_avd_speed_enabled",
+                            "info",
+                            json!({ "name": name_clone3 }),
                         );
                     }
                 });
@@ -389,7 +398,7 @@ fn stop_avd_impl(name: String, window: Window) -> CommandResult {
         .creation_flags(0x08000000)
         .args(["/F", "/IM", "emulator.exe"])
         .output();
-    let _ = window.emit("log", format!("Stop signal sent to \"{}\"", name));
+    emit_log(&window, "log_avd_stop_sent", "info", json!({ "name": name }));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -405,7 +414,7 @@ fn stop_avd_impl(name: String, window: Window) -> CommandResult {
     let _ = std::process::Command::new("pkill")
         .args(["-f", "emulator"])
         .output();
-    let _ = window.emit("log", format!("Stop signal sent to \"{}\"", name));
+    emit_log(&window, "log_avd_stop_sent", "info", json!({ "name": name }));
     CommandResult { ok: true, error: None, output: None }
 }
 
@@ -421,7 +430,7 @@ pub async fn optimize_guest_apps(window: Window) -> CommandResult {
         return CommandResult { ok: false, error: Some("adb not found".to_string()), output: None };
     }
 
-    let _ = window.emit("log", "Scanning user-installed packages inside emulator...");
+    emit_log(&window, "log_apps_scanning", "info", json!({}));
 
     let output = match std::process::Command::new(&adb_exe)
         .args(["-s", "emulator-5554", "shell", "pm", "list", "packages", "-3"])
@@ -443,21 +452,21 @@ pub async fn optimize_guest_apps(window: Window) -> CommandResult {
     }
 
     if packages.is_empty() {
-        let _ = window.emit("log", "No third-party apps or games found to optimize.");
+        emit_log(&window, "log_apps_empty", "info", json!({}));
         return CommandResult { ok: true, error: None, output: Some("No third-party apps found".into()) };
     }
 
     let total = packages.len();
-    let _ = window.emit("log", format!("Found {} apps/games. Starting Ahead-Of-Time (AOT) compilation...", total));
+    emit_log(&window, "log_apps_compiling", "info", json!({ "total": total }));
 
     for (idx, pkg) in packages.iter().enumerate() {
-        let _ = window.emit("log", format!("[{}/{}] Optimizing: {}...", idx + 1, total, pkg));
+        emit_log(&window, "log_app_compiling", "info", json!({ "index": idx + 1, "total": total, "package": pkg }));
         
         let _ = std::process::Command::new(&adb_exe)
             .args(["-s", "emulator-5554", "shell", "cmd", "package", "compile", "-m", "speed", "-f", pkg])
             .output();
     }
 
-    let _ = window.emit("log", "All user apps and games fully compiled to native machine code!");
+    emit_log(&window, "log_apps_compiled", "success", json!({}));
     CommandResult { ok: true, error: None, output: Some("Optimization completed successfully".into()) }
 }

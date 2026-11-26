@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   Copy,
@@ -19,42 +20,43 @@ import * as api from '../api.js'
 
 const RESOLUTIONS = [
   // ── Portrait 9:16 ──────────────────────────────────────────
-  { val: '1080x1920', label: 'Full HD  1080×1920  — 9:16 Portrait (Flagship Phone)' },
-  { val: '720x1280',  label: 'HD       720×1280   — 9:16 Portrait (Standard Phone)' },
-  { val: '1440x2560', label: 'QHD      1440×2560  — 9:16 Portrait (High-end Phone)' },
-  { val: '1080x2340', label: 'FHD+     1080×2340  — 19.5:9 Portrait (Gaming)' },
-  { val: '1080x2400', label: 'FHD+     1080×2400  — 20:9 Portrait (Modern Slim)' },
-  { val: '1440x3200', label: 'QHD+     1440×3200  — 20:9 Portrait (Flagship 2024)' },
+  '1080x1920',
+  '720x1280',
+  '1440x2560',
+  '1080x2340',
+  '1080x2400',
+  '1440x3200',
   // ── Portrait Other ─────────────────────────────────────────
-  { val: '1170x2532', label: 'iPhone-like 1170×2532  — Super Retina (6.1")' },
-  { val: '828x1792',  label: 'iPhone-like  828×1792  — Liquid Retina (6.1")' },
-  { val: '1080x2160', label: 'FullView  1080×2160  — 18:9 Tall Portrait' },
-  { val: '540x960',   label: 'qHD       540×960    — 9:16 Low-end Portrait' },
+  '1170x2532',
+  '828x1792',
+  '1080x2160',
+  '540x960',
   // ── Landscape ──────────────────────────────────────────────
-  { val: '1920x1080', label: 'Full HD   1920×1080  — 16:9 Landscape' },
-  { val: '1280x720',  label: 'HD        1280×720   — 16:9 Landscape (TV / Default)' },
-  { val: '2560x1440', label: 'QHD       2560×1440  — 16:9 Landscape (High-res)' },
+  '1920x1080',
+  '1280x720',
+  '2560x1440',
   // ── Tablet / Wide ──────────────────────────────────────────
-  { val: '2560x1600', label: 'WQXGA     2560×1600  — 16:10 Tablet Landscape' },
-  { val: '1920x1200', label: 'WUXGA     1920×1200  — 16:10 Tablet (10")' },
-  { val: '2048x1536', label: 'iPad-like 2048×1536  — 4:3 Tablet (iPad retina)' },
-  { val: '1280x800',  label: 'WXGA      1280×800   — 16:10 Small Tablet' },
-  { val: '800x1280',  label: 'Portrait Tablet 800×1280  — 8:10 Portrait' },
+  '2560x1600',
+  '1920x1200',
+  '2048x1536',
+  '1280x800',
+  '800x1280',
   // ── Foldable / Tall ────────────────────────────────────────
-  { val: '884x2208',  label: 'Foldable Cover  884×2208  — Slim portrait (Cover Screen)' },
-  { val: '1768x2208', label: 'Foldable Unfolded 1768×2208 — Square-ish open layout' },
+  '884x2208',
+  '1768x2208',
   // ── Square ─────────────────────────────────────────────────
-  { val: '1080x1080', label: 'Square    1080×1080  — 1:1 (Instagram / Smartwatch dev)' },
+  '1080x1080',
   // ── Free Size (Custom) ─────────────────────────────────────
-  { val: 'custom',    label: 'Custom / Free Size  — Enter any resolution' },
+  'custom',
 ]
 const GPU_MODES = [
-  { val: 'auto',     label: 'Auto (Recommended - Best balance for dGPU/iGPU)' },
-  { val: 'host',     label: 'Hardware Accelerated (Force Graphics Card)' },
-  { val: 'software', label: 'Software Emulation (Safe Mode / Diagnostics)' },
+  { val: 'auto',     label: 'device_gpu_auto' },
+  { val: 'host',     label: 'device_gpu_host' },
+  { val: 'software', label: 'device_gpu_software' },
 ]
 
 export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
+  const { t } = useTranslation()
   const installedImages = (status?.installed_packages || []).filter(pkg => pkg.startsWith("system-images;"))
 
   const getAndroidVersion = (pkgId) => {
@@ -178,17 +180,17 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ width: 560 }}>
-        <div className="modal-title"><Smartphone size={16} style={{ marginRight: 6 }} /><span>Create New Android Device</span></div>
+        <div className="modal-title"><Smartphone size={16} style={{ marginRight: 6 }} /><span>{t('device_create_title')}</span></div>
         <div className="modal-form">
           <div className="form-group">
-            <label className="form-label">Device Name</label>
-            <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Pixel_9_Gaming" />
+            <label className="form-label">{t('device_name')}</label>
+            <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('device_name_example')} />
           </div>
           <div className="form-group">
-            <label className="form-label">System Image</label>
+            <label className="form-label">{t('device_system_image')}</label>
             {installedImages.length === 0 ? (
               <div className="alert alert-danger" style={{ fontSize: 12 }}>
-                <AlertTriangle size={14} style={{ marginRight: 6 }} /><strong>No system images installed!</strong> Please go to the <strong>SDK Manager</strong> page and install at least one system image (phone, TV, etc.) first.
+                <AlertTriangle size={14} style={{ marginRight: 6 }} />{t('device_missing_images')}
               </div>
             ) : (
               <CustomSelect
@@ -200,16 +202,16 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
           </div>
           {isSpecial ? (
             <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 16 }}>
-              <Monitor size={14} style={{ marginRight: 6 }} /> Wear OS, Android TV, and Automotive emulators use native default configurations. Custom settings (RAM, Cores, Resolution, GPU, DPI, Storage) are managed automatically by the system.
+              <Monitor size={14} style={{ marginRight: 6 }} /> {t('device_special_create_description')}
             </div>
           ) : (
             <>
               <div className="form-group">
-                <label className="form-label">Screen Resolution</label>
+                <label className="form-label">{t('device_resolution')}</label>
                 <CustomSelect
                   value={form.screenResolution}
                   onChange={value => set('screenResolution', value)}
-                  options={RESOLUTIONS.map(r => ({ value: r.val, label: r.label }))}
+                  options={RESOLUTIONS.map(value => ({ value, label: t(`resolution_${value}`) }))}
                 />
                 {form.screenResolution === 'custom' && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
@@ -218,7 +220,7 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
                       type="number" min={240} max={7680}
                       value={customW}
                       onChange={e => setCustomW(e.target.value)}
-                      placeholder="Width"
+                      placeholder={t('screen_width')}
                       style={{ flex: 1 }}
                     />
                     <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>×</span>
@@ -227,7 +229,7 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
                       type="number" min={240} max={7680}
                       value={customH}
                       onChange={e => setCustomH(e.target.value)}
-                      placeholder="Height"
+                      placeholder={t('screen_height')}
                       style={{ flex: 1 }}
                     />
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>px</span>
@@ -235,22 +237,22 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label">GPU Rendering Mode</label>
+                <label className="form-label">{t('device_gpu_mode')}</label>
                 <CustomSelect
                   value={form.gpuMode}
                   onChange={value => set('gpuMode', value)}
-                  options={GPU_MODES.map(g => ({ value: g.val, label: g.label }))}
+                  options={GPU_MODES.map(g => ({ value: g.val, label: t(g.label) }))}
                 />
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  {form.gpuMode === 'auto' && 'Recommended: Automatically select the best hardware renderer based on your system setup.'}
-                  {form.gpuMode === 'host' && 'Force Hardware: Offload all 3D rendering tasks directly to your graphics card (dGPU/iGPU).'}
-                  {form.gpuMode === 'software' && 'Software Mode: Uses your CPU for graphics. Very slow, use only as a backup.'}
+                  {form.gpuMode === 'auto' && t('device_gpu_auto_description')}
+                  {form.gpuMode === 'host' && t('device_gpu_host_description')}
+                  {form.gpuMode === 'software' && t('device_gpu_software_description')}
                 </div>
               </div>
               <div className="grid-2">
                 <div className="form-group">
                   <div className="flex items-center justify-between">
-                    <label className="form-label">RAM</label>
+                    <label className="form-label">{t('device_ram')}</label>
                     <span className="text-accent font-mono" style={{ fontSize: 13 }}>{form.ram} MB</span>
                   </div>
                   <input type="range" min={1024} max={8192} step={512} value={form.ram} onChange={e => set('ram', Number(e.target.value))} />
@@ -258,8 +260,8 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
                 </div>
                 <div className="form-group">
                   <div className="flex items-center justify-between">
-                    <label className="form-label">CPU Cores</label>
-                    <span className="text-accent font-mono" style={{ fontSize: 13 }}>{form.cores} cores</span>
+                    <label className="form-label">{t('device_cpu_cores')}</label>
+                    <span className="text-accent font-mono" style={{ fontSize: 13 }}>{t('device_core_count', { count: form.cores })}</span>
                   </div>
                   <input type="range" min={1} max={8} step={1} value={form.cores} onChange={e => set('cores', Number(e.target.value))} />
                   <div className="flex justify-between text-sm text-muted mt-2"><span>1</span><span>8</span></div>
@@ -268,29 +270,29 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
               <div className="grid-2">
                 <div className="form-group">
                   <div className="flex items-center justify-between">
-                    <label className="form-label">Internal Storage</label>
+                    <label className="form-label">{t('device_storage')}</label>
                     <span className="text-accent font-mono" style={{ fontSize: 13 }}>{(form.storage / 1024).toFixed(0)} GB</span>
                   </div>
                   <input type="range" min={2048} max={32768} step={1024} value={form.storage} onChange={e => set('storage', Number(e.target.value))} />
                 </div>
                 <div className="form-group">
                   <div className="flex items-center justify-between">
-                    <label className="form-label">Screen DPI</label>
+                    <label className="form-label">{t('device_screen_dpi')}</label>
                     <span className="text-accent font-mono" style={{ fontSize: 13 }}>{form.dpi} dpi</span>
                   </div>
                   <input type="range" min={120} max={640} step={40} value={form.dpi} onChange={e => set('dpi', Number(e.target.value))} />
                 </div>
               </div>
               <div className="alert alert-info" style={{ fontSize: 12 }}>
-                <Wrench size={14} style={{ marginRight: 6 }} /><strong>x86_64 images</strong> run natively on your PC. GPU mode <strong>host</strong> passes your GPU directly to the emulator for maximum performance.
+                <Wrench size={14} style={{ marginRight: 6 }} />{t('device_x86_tip')}
               </div>
             </>
           )}
 
           <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={onClose} disabled={creating}>Cancel</button>
+            <button className="btn btn-ghost" onClick={onClose} disabled={creating}>{t('cancel')}</button>
             <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-              {creating ? <><Spinner size={14} />Creating...</> : <><Smartphone size={14} style={{ marginRight: 6 }} />Create Device</>}
+              {creating ? <><Spinner size={14} />{t('device_creating')}</> : <><Smartphone size={14} style={{ marginRight: 6 }} />{t('device_create_action')}</>}
             </button>
           </div>
         </div>
@@ -300,6 +302,7 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
 }
 
 export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
+  const { t } = useTranslation()
   const [launching, setLaunching] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
@@ -332,20 +335,20 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
     if (mode === 'host') {
       return (
         <span className="badge" style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', borderColor: 'rgba(239,68,68,0.25)', fontWeight: 600, fontSize: 10 }}>
-          <Zap size={10} style={{ marginRight: 4 }} /> Hardware GPU
+          <Zap size={10} style={{ marginRight: 4 }} /> {t('device_gpu_host_badge')}
         </span>
       )
     }
     if (mode === 'software') {
       return (
         <span className="badge" style={{ background: 'rgba(156,163,175,0.12)', color: '#9ca3af', borderColor: 'rgba(156,163,175,0.25)', fontWeight: 500, fontSize: 10 }}>
-          <Monitor size={10} style={{ marginRight: 4 }} /> Software GPU
+          <Monitor size={10} style={{ marginRight: 4 }} /> {t('device_gpu_software_badge')}
         </span>
       )
     }
     return (
       <span className="badge" style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.25)', fontWeight: 600, fontSize: 10 }}>
-        <Wrench size={10} style={{ marginRight: 4 }} /> Auto GPU
+        <Wrench size={10} style={{ marginRight: 4 }} /> {t('device_gpu_auto_badge')}
       </span>
     )
   }
@@ -357,12 +360,12 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
           <div className="device-name">{avd.name.replace(/_/g, ' ')}</div>
           <div className="device-gpu-info">
             <Monitor size={12} style={{ marginRight: 6 }} />
-            <span>GPU: {avd.gpu || 'auto'} · {avd.cores || '4'} cores · {avd.ram ? Math.round(Number(avd.ram) / 1024) + 'GB' : '4GB'} RAM</span>
+            <span>{t('device_specs', { gpu: avd.gpu || 'auto', cores: avd.cores || '4', ram: avd.ram ? Math.round(Number(avd.ram) / 1024) : 4 })}</span>
           </div>
         </div>
         <span className={`badge ${avd.running ? 'badge-running' : 'badge-stopped'}`}>
           {avd.running && <span className="dot" />}
-          {avd.running ? 'Running' : 'Stopped'}
+          {t(avd.running ? 'running' : 'device_stopped')}
         </span>
       </div>
       <div className="device-meta">
@@ -375,32 +378,32 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
         {!avd.running ? (
           <>
             <button className="btn btn-success btn-sm" onClick={handleLaunch} disabled={launching}>
-              {launching ? <><Spinner size={12} />Starting…</> : <><Play size={12} style={{ marginRight: 6 }} />Launch</>}
+              {launching ? <><Spinner size={12} />{t('device_starting')}</> : <><Play size={12} style={{ marginRight: 6 }} />{t('device_launch')}</>}
             </button>
-            <button className="btn btn-ghost btn-sm" style={{ color: '#fbbf24' }} onClick={handleWipeLaunch} disabled={launching} title="Factory Reset & Boot">
-              <Zap size={12} style={{ marginRight: 6 }} /> Wipe & Boot
+            <button className="btn btn-ghost btn-sm" style={{ color: '#fbbf24' }} onClick={handleWipeLaunch} disabled={launching} title={t('device_wipe_tooltip')}>
+              <Zap size={12} style={{ marginRight: 6 }} /> {t('device_wipe_boot')}
             </button>
           </>
         ) : (
           <button className="btn btn-danger btn-sm" onClick={handleStop} disabled={stopping}>
-            {stopping ? <><Spinner size={12} />Stopping…</> : <><Play size={12} style={{ marginRight: 6, transform: 'rotate(180deg)' }} />Stop</>}
+            {stopping ? <><Spinner size={12} />{t('device_stopping')}</> : <><Play size={12} style={{ marginRight: 6, transform: 'rotate(180deg)' }} />{t('device_stop')}</>}
           </button>
         )}
         <button className="btn btn-ghost btn-sm" onClick={() => setShowLogs(v => !v)}>
-          {showLogs ? <><EyeOff size={12} style={{ marginRight: 6 }} />Hide Logs</> : <><Eye size={12} style={{ marginRight: 6 }} />Logs</>}
+          {showLogs ? <><EyeOff size={12} style={{ marginRight: 6 }} />{t('device_hide_logs')}</> : <><Eye size={12} style={{ marginRight: 6 }} />{t('device_logs')}</>}
         </button>
         {(logs[avd.name] || []).length > 0 && (
           <button className="btn btn-ghost btn-sm" onClick={handleCopyLogs} style={{ color: copied ? 'var(--text-green)' : 'inherit' }}>
-            {copied ? <><Save size={12} style={{ marginRight: 6 }} />Copied!</> : <><Copy size={12} style={{ marginRight: 6 }} />Copy Logs</>}
+            {copied ? <><Save size={12} style={{ marginRight: 6 }} />{t('device_logs_copied')}</> : <><Copy size={12} style={{ marginRight: 6 }} />{t('device_copy_logs')}</>}
           </button>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => onEdit(avd)}
-            title="Edit Configuration" disabled={avd.running}>
+            title={t('device_edit_tooltip')} disabled={avd.running}>
             <Pencil size={12} />
           </button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={handleDelete}
-            title="Delete device" style={{ color: '#ef4444' }} disabled={avd.running}>
+            title={t('device_delete_tooltip')} style={{ color: '#ef4444' }} disabled={avd.running}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -411,21 +414,21 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
         <div className="modal-overlay" onClick={() => setShowConfirmDelete(false)}>
           <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
             <div className="modal-title" style={{ color: '#ef4444' }}>
-              <AlertTriangle size={16} style={{ marginRight: 6 }} /> <span>Delete Device?</span>
+              <AlertTriangle size={16} style={{ marginRight: 6 }} /> <span>{t('device_delete_title')}</span>
             </div>
             <div style={{ padding: '16px 20px', fontSize: 13, lineHeight: '1.5', color: 'var(--text-secondary)' }}>
-              Are you sure you want to delete <strong>{avd.name.replace(/_/g, ' ')}</strong>?
+              {t('device_delete_question', { name: avd.name.replace(/_/g, ' ') })}
               <br /><br />
-              This will permanently erase all data, apps, and storage associated with this emulator. 
-              <strong style={{ color: '#ef4444' }}> This cannot be undone!</strong>
+              {t('device_delete_warning')}
+              <strong style={{ color: '#ef4444' }}> {t('device_action_irreversible')}</strong>
             </div>
             <div className="modal-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.03)', marginTop: 0 }}>
-               <button className="btn btn-ghost" onClick={() => setShowConfirmDelete(false)}>Cancel</button>
+               <button className="btn btn-ghost" onClick={() => setShowConfirmDelete(false)}>{t('cancel')}</button>
                <button className="btn btn-danger" onClick={async () => {
                  setShowConfirmDelete(false)
                  await onDelete(avd.name)
                }} style={{ background: '#ef4444', color: '#fff' }}>
-                 <Trash2 size={12} style={{ marginRight: 6 }} /> Delete Permanently
+                 <Trash2 size={12} style={{ marginRight: 6 }} /> {t('device_delete_permanently')}
                </button>
             </div>
           </div>
@@ -436,23 +439,23 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
         <div className="modal-overlay" onClick={() => setShowConfirmWipe(false)}>
           <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
             <div className="modal-title" style={{ color: '#fbbf24' }}>
-              <AlertTriangle size={16} style={{ marginRight: 6 }} /> <span>Factory Reset AVD?</span>
+              <AlertTriangle size={16} style={{ marginRight: 6 }} /> <span>{t('device_wipe_title')}</span>
             </div>
             <div style={{ padding: '16px 20px', fontSize: 13, lineHeight: '1.5', color: 'var(--text-secondary)' }}>
-              Are you sure you want to perform a **Factory Reset** on <strong>{avd.name.replace(/_/g, ' ')}</strong>?
+              {t('device_wipe_question', { name: avd.name.replace(/_/g, ' ') })}
               <br /><br />
-              This will completely wipe all user accounts, installed apps, settings, and files. 
-              <strong style={{ color: '#fbbf24' }}> This cannot be undone!</strong>
+              {t('device_wipe_warning')}
+              <strong style={{ color: '#fbbf24' }}> {t('device_action_irreversible')}</strong>
             </div>
             <div className="modal-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.03)', marginTop: 0 }}>
-               <button className="btn btn-ghost" onClick={() => setShowConfirmWipe(false)}>Cancel</button>
+               <button className="btn btn-ghost" onClick={() => setShowConfirmWipe(false)}>{t('cancel')}</button>
                <button className="btn btn-primary" onClick={async () => {
                  setShowConfirmWipe(false)
                  setLaunching(true)
                  await onLaunch(avd.name, true)
                  setLaunching(false)
                }} style={{ background: '#fbbf24', color: '#09090b', border: 'none' }}>
-                 <Zap size={12} style={{ marginRight: 6 }} /> Wipe & Boot AVD
+                 <Zap size={12} style={{ marginRight: 6 }} /> {t('device_wipe_boot_confirm')}
                </button>
             </div>
           </div>
@@ -463,6 +466,7 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
 }
 
 export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
+  const { t } = useTranslation()
   const apiLower = (avd.api || '').toLowerCase()
   const targetLower = (avd.target || '').toLowerCase()
   const isWear = apiLower.includes('wear') || targetLower.includes('wear')
@@ -471,7 +475,7 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
   const isSpecial = isWear || isTv || isAuto
 
   const dedicatedGpu = Array.isArray(gpus) ? (gpus.find(g => g.is_dedicated) || gpus[0]) : null
-  const gpuNameStr = dedicatedGpu ? dedicatedGpu.name : "dedicated GPU"
+  const gpuNameStr = dedicatedGpu ? dedicatedGpu.name : t('device_dedicated_gpu')
 
   const [ram, setRam] = useState(avd ? Number(avd.ram) || 4096 : 4096)
   const [cores, setCores] = useState(avd ? Number(avd.cores) || 4 : 4)
@@ -514,7 +518,7 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
   })
 
   // Custom free-size: if the saved resolution doesn't match any preset, auto-select "custom"
-  const knownVals = RESOLUTIONS.filter(r => r.val !== 'custom').map(r => r.val)
+  const knownVals = RESOLUTIONS.filter(value => value !== 'custom')
   const isCurrentCustom = !knownVals.includes(resolution)
   const initParts = isCurrentCustom ? resolution.split('x') : ['1080', '1920']
   const [customW, setCustomW] = useState(initParts[0] || '1080')
@@ -545,56 +549,56 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
       localStorage.setItem(`emulator_speed_mode_${avd.name}`, String(speedMode))
       onSaved()
     } else {
-      alert(result.error || 'Failed to update configuration')
+      alert(t('device_update_failed', { error: result.error ?? t('unknown_error') }))
     }
   }
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ width: 500 }}>
-        <div className="modal-title"><Pencil size={16} style={{ marginRight: 6 }} /><span>Edit AVD: {avd.name.replace(/_/g, ' ')}</span></div>
+        <div className="modal-title"><Pencil size={16} style={{ marginRight: 6 }} /><span>{t('device_edit_title', { name: avd.name.replace(/_/g, ' ') })}</span></div>
         <div className="modal-form">
           {isWear && (
             <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 16 }}>
-              <Smartphone size={14} style={{ marginRight: 6 }} /><strong>Wear OS Watch detected!</strong> System resource limits have been automatically locked to watch specifications (Max 1GB RAM, Max 2 Cores, round screen layout preserved) to ensure a stable boot.
+              <Smartphone size={14} style={{ marginRight: 6 }} />{t('device_wear_detected')}
             </div>
           )}
           {isTv && (
             <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 16 }}>
-              <Monitor size={14} style={{ marginRight: 6 }} /><strong>Android TV detected!</strong> Resources clamped (Max 2GB RAM, Max 2 Cores) to maintain TV framework stability.
+              <Monitor size={14} style={{ marginRight: 6 }} />{t('device_tv_detected')}
             </div>
           )}
           {isAuto && (
             <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 16 }}>
-              <Wrench size={14} style={{ marginRight: 6 }} /><strong>Android Automotive detected!</strong> Resources clamped (Max 4GB RAM, Max 4 Cores) for optimal dashboard emulation.
+              <Wrench size={14} style={{ marginRight: 6 }} />{t('device_automotive_detected')}
             </div>
           )}
           {isSpecial ? (
             <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 16 }}>
-              <Monitor size={14} style={{ marginRight: 6 }} /> Wear OS, Android TV, and Automotive emulators use native default configurations. Custom settings (RAM, Cores, Resolution, GPU, DPI) are managed automatically by the system.
+              <Monitor size={14} style={{ marginRight: 6 }} /> {t('device_special_edit_description')}
             </div>
           ) : (
             <>
               <div className="form-group">
-                <label className="form-label">GPU Rendering Mode</label>
+                <label className="form-label">{t('device_gpu_mode')}</label>
                 <CustomSelect
                   value={gpuMode}
                   onChange={setGpuMode}
-                  options={GPU_MODES.map(g => ({ value: g.val, label: g.label }))}
+                  options={GPU_MODES.map(g => ({ value: g.val, label: t(g.label) }))}
                 />
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  {gpuMode === 'auto' && 'Recommended: Automatically select the best hardware renderer based on your system setup.'}
-                  {gpuMode === 'host' && 'Force Hardware: Offload all 3D rendering tasks directly to your graphics card (dGPU/iGPU).'}
-                  {gpuMode === 'software' && 'Software Mode: Uses your CPU for graphics. Very slow, use only as a backup.'}
+                  {gpuMode === 'auto' && t('device_gpu_auto_description')}
+                  {gpuMode === 'host' && t('device_gpu_host_description')}
+                  {gpuMode === 'software' && t('device_gpu_software_description')}
                 </div>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Screen Resolution</label>
+                <label className="form-label">{t('device_resolution')}</label>
                 <CustomSelect
                   value={editResolution}
                   onChange={setEditResolution}
-                  options={RESOLUTIONS.map(r => ({ value: r.val, label: r.label }))}
+                  options={RESOLUTIONS.map(value => ({ value, label: t(`resolution_${value}`) }))}
                 />
                 {editResolution === 'custom' && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
@@ -603,7 +607,7 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
                       type="number" min={240} max={7680}
                       value={customW}
                       onChange={e => setCustomW(e.target.value)}
-                      placeholder="Width"
+                      placeholder={t('screen_width')}
                       style={{ flex: 1 }}
                     />
                     <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>×</span>
@@ -612,7 +616,7 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
                       type="number" min={240} max={7680}
                       value={customH}
                       onChange={e => setCustomH(e.target.value)}
-                      placeholder="Height"
+                      placeholder={t('screen_height')}
                       style={{ flex: 1 }}
                     />
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>px</span>
@@ -622,16 +626,16 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
               
               <div className="form-group">
                 <div className="flex items-center justify-between">
-                  <label className="form-label">Screen Density (DPI)</label>
+                  <label className="form-label">{t('device_screen_density')}</label>
                   <span className="text-accent font-mono" style={{ fontSize: 13 }}>{dpi} DPI</span>
                 </div>
                 <input type="range" min={160} max={480} step={40} value={dpi} onChange={e => setDpi(Number(e.target.value))} />
-                <div className="flex justify-between text-sm text-muted mt-2"><span>160 (Low)</span><span>480 (High)</span></div>
+                <div className="flex justify-between text-sm text-muted mt-2"><span>{t('device_dpi_low')}</span><span>{t('device_dpi_high')}</span></div>
               </div>
               
               <div className="form-group">
                 <div className="flex items-center justify-between">
-                  <label className="form-label">RAM Allocation</label>
+                  <label className="form-label">{t('device_ram_allocation')}</label>
                   <span className="text-accent font-mono" style={{ fontSize: 13 }}>{ram} MB</span>
                 </div>
                 <input type="range" min={1024} max={8192} step={512} value={ram} onChange={e => setRam(Number(e.target.value))} />
@@ -640,15 +644,15 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
               
               <div className="form-group">
                 <div className="flex items-center justify-between">
-                  <label className="form-label">CPU Cores</label>
-                  <span className="text-accent font-mono" style={{ fontSize: 13 }}>{cores} cores</span>
+                  <label className="form-label">{t('device_cpu_cores')}</label>
+                  <span className="text-accent font-mono" style={{ fontSize: 13 }}>{t('device_core_count', { count: cores })}</span>
                 </div>
                 <input type="range" min={1} max={8} step={1} value={cores} onChange={e => setCores(Number(e.target.value))} />
                 <div className="flex justify-between text-sm text-muted mt-2"><span>1</span><span>8</span></div>
               </div>
 
               <div className="alert alert-info" style={{ fontSize: 12 }}>
-                <Wrench size={14} style={{ marginRight: 6 }} /><strong>Auto Mode</strong> is recommended. It automatically selects your dedicated card ({gpuNameStr}) and uses DirectX translation on integrated GPUs.
+                <Wrench size={14} style={{ marginRight: 6 }} />{t('device_auto_gpu_hint', { gpu: gpuNameStr })}
               </div>
             </>
           )}
@@ -657,8 +661,8 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
 
           <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
             <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Zap size={12} style={{ marginRight: 6 }} /> Quick Boot (Snapshot Resume)</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Resume instantly from your last saved state (turn off for full cold boot).</div>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_quick_boot')}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_quick_boot_description')}</div>
             </div>
             <div className={`toggle ${quickBoot ? 'on' : ''}`} onClick={() => setQuickBoot(!quickBoot)} />
           </div>
@@ -667,8 +671,8 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
 
           <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
             <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Monitor size={12} style={{ marginRight: 6 }} /> Show Android Loading Logo</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Display the native Android logo animation during startup.</div>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Monitor size={12} style={{ marginRight: 6 }} /> {t('device_boot_animation')}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_boot_animation_description')}</div>
             </div>
             <div className={`toggle ${bootAnim ? 'on' : ''}`} onClick={() => setBootAnim(!bootAnim)} />
           </div>
@@ -677,8 +681,8 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
 
           <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
             <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> Ultra Gaming Mode (RAM Disk Cache)</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Load disk writes directly into physical RAM. Instant loads and zero stutter. Note: Discards gameplay updates/cache on shutdown.</div>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_ultra_gaming')}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_ultra_gaming_description')}</div>
             </div>
             <div className={`toggle ${ultraGaming ? 'on' : ''}`} onClick={() => setUltraGaming(!ultraGaming)} />
           </div>
@@ -687,16 +691,16 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
 
           <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
             <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> Speed Mode (Optimize Animations & GPU)</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Automatically disables system UI animations and forces GPU composition in SurfaceFlinger on boot for maximum gaming frame rates.</div>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_speed_mode')}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_speed_mode_description')}</div>
             </div>
             <div className={`toggle ${speedMode ? 'on' : ''}`} onClick={() => setSpeedMode(!speedMode)} />
           </div>
           
           <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-ghost" onClick={onClose} disabled={saving}>{t('cancel')}</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? <><Spinner size={14} />Saving...</> : <><Save size={14} style={{ marginRight: 6 }} />Save Changes</>}
+              {saving ? <><Spinner size={14} />{t('device_saving')}</> : <><Save size={14} style={{ marginRight: 6 }} />{t('device_save')}</>}
             </button>
           </div>
         </div>

@@ -1,57 +1,40 @@
-# 📖 User & Configuration Guide
+# 使用与配置指南
 
-This guide describes how to customize, configure, and optimize Android Virtual Devices (AVDs) using the **KB Android Emulator Manager**.
+本指南介绍如何在 **KB 安卓模拟器管理器** 中配置安卓虚拟设备（AVD），以及如何处理启动故障。
 
----
+## GPU 加速模式
 
-## 🎮 GPU Acceleration Modes
+| 模式 | 行为 | 适用场景 |
+| --- | --- | --- |
+| 自动（`auto`） | 由模拟器根据系统配置选择渲染方式。 | 日常使用。 |
+| 硬件加速（`host`） | 由宿主机显卡直接处理虚拟设备的图形渲染。 | 3D 应用和游戏。 |
+| 软件渲染（`software`） | 使用 CPU 渲染图形。 | 显卡驱动故障时的排查或备用方案。 |
 
-Choosing the correct graphics pipeline is the single most important factor for gaming framerates:
+## 设备配置
 
-1.  **Auto Rendering (`auto`):**
-    *   *Behavior:* Passes rendering decisions directly to the emulator engine.
-    *   *Usage:* Recommended for standard operations. On modern Windows with dedicated Nvidia GPUs, this defaults to native Vulkan translation (`gfxstream`).
-2.  **Host Hardware Rendering (`host`):**
-    *   *Behavior:* Forces the guest OS to route GLES and Vulkan calls directly to your host GPU (dGPU).
-    *   *Usage:* Best for 3D games (like *Free Fire MAX* or *Zombie Shooter*).
-3.  **Software rendering (`software`):**
-    *   *Behavior:* Uses SwiftShader on your CPU to translate graphics.
-    *   *Usage:* Extremely slow. Use only as a fallback if your graphics driver crashes.
+管理器会根据系统镜像的类型调整设备的资源上限、Dalvik 虚拟机堆大小和屏幕布局。
 
----
+| 设备类型 | 内存上限 | CPU 核心数上限 | 虚拟机堆 | 屏幕布局 |
+| --- | --- | --- | --- | --- |
+| Wear OS 手表 | 1024 MB | 2 | 128 MB | 保留系统镜像的圆形布局 |
+| Android TV | 2048 MB | 2 | 256 MB | 默认使用 1920×1080 |
+| Android Automotive | 4096 MB | 4 | 512 MB | 默认使用 1280×720 |
+| 手机或平板 | 用户设置 | 用户设置 | 512 或 1024 MB | 可在设备配置中调整 |
 
-## ⌚ Smart Tuning Profiles
+## 清除数据并启动
 
-The manager automatically adjusts hardware layouts and VM Dalvik heaps based on target image classification:
+如果虚拟设备反复卡在开机动画，可以在「我的设备」中点击设备卡片上的「清除数据并启动」，并在弹窗中确认。模拟器将使用 `-wipe-data` 参数清除设备数据后重新启动。此操作会删除设备内的账号、应用、设置和文件。
 
-| Device Type | RAM Clamp | CPU Cores Clamp | VM Heap | Growth Limit | LCD Layout Override |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Wear OS Watch** | Max 1024 MB | Max 2 Cores | `128MB` | `64MB` | **Bypassed** (Keeps original circular faces) |
-| **Android TV** | Max 2048 MB | Max 2 Cores | `256MB` | `128MB` | Allowed (`1920x1080` default) |
-| **Android Car** | Max 4096 MB | Max 4 Cores | `512MB` | `256MB` | Allowed (`1280x720` default) |
-| **Phone/Tablet** | User Defined | User Defined | `512/1024MB`| `256/512MB`| Allowed (`1280x720` default) |
+## 性能优化
 
----
+### AOT 预编译
 
-## 🧹 Recovery Actions (Wipe & Boot)
+即时编译可能在应用运行时造成卡顿。启动设备后，在「我的设备」页面点击「优化游戏」。管理器会通过 ADB 为设备中已安装的用户应用执行预编译。
 
-If a device hangs at the Google/Android boot animation loop:
-1.  **Cause:** The virtual device crashed or was edited during a quick-boot session, writing a corrupted memory snapshot to disk.
-2.  **Fix:** Click the **`🧹 Wipe & Boot`** button on your device card. This launches QEMU with the `-wipe-data` flag, discarding saved state files and booting fresh using your revised `config.ini` parameters.
+```bash
+cmd package compile -m speed -f <package_name>
+```
 
----
+### 网络优化
 
-## 🚀 Performance Optimizations
-
-### 1. Ahead-Of-Time (AOT) Compilation
-By default, Android compiles app code JIT (Just-In-Time) when running, causing micro-stutters during gameplay.
-*   To resolve this, click **`⚡ Compile Apps (AOT)`** on your device card.
-*   This triggers ADB to run:
-    ```bash
-    cmd package compile -m speed -f <package_name>
-    ```
-*   This pre-compiles app bytecodes to native x86_64 machine code, eliminating compile-time stuttering.
-
-### 2. Network Optimizations
-*   The launcher overrides guest DNS routing to Cloudflare (`1.1.1.1`) via `-dns-server 1.1.1.1` to bypass local ISP DNS lookups.
-*   TCP window sizes are expanded on boot via guest system properties to boost network download speeds inside Google Play Store.
+管理器可通过 `-dns-server 1.1.1.1` 将虚拟设备的 DNS 请求发往 Cloudflare，并可在启动时调整 TCP 缓冲区。
