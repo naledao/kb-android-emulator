@@ -1,0 +1,54 @@
+name: Windows Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: windows-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and publish Windows installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+          tagName: windows-${{ github.sha }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: 'KB Android Emulator v__VERSION__ · Windows x64 #${{ github.run_number }}'
+          releaseBody: 'Windows x64 NSIS installer built from commit ${{ github.sha }}.'
+          prerelease: true
+          includeUpdaterJson: false
