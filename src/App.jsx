@@ -37,7 +37,8 @@ import './index.css'
 export default function App() {
   const { toasts, toast } = useToast()
   const { confirm, dialog: confirmDialog } = useConfirm()
-  const [page, setPage] = useState('setup')
+  const [selectedPage, setPage] = useState(null)
+  const page = selectedPage ?? 'setup'
   const [logs, setLogs] = useState([])
   const [emulatorLogs, setEmulatorLogs] = useState({})
 
@@ -97,16 +98,16 @@ export default function App() {
       setProgress(p => ({ ...p, [data.task]: data.pct }))
       setSdkProgress(p => ({ ...p, [data.task]: data.pct }))
     })
-    const offEmulatorLog = api.on('emulator-log', ({ name, line }) => {
+    const offEmulatorLog = api.on('emulator-log', ({ id, name, line }) => {
       // Only store if capture is enabled — read from localStorage for latest value
       if (localStorage.getItem('emulator_log_capture') === 'false') return
       setEmulatorLogs(prev => ({
         ...prev,
-        [name]: [...(prev[name] || []).slice(-300), line.trim()]
+        [id]: { name, lines: [...(prev[id]?.lines || []).slice(-300), line.trim()] }
       }))
     })
-    const offEmulatorExit = api.on('emulator-exit', ({ name }) => {
-      toast(i18n.t('emulator_exited', { name }), 'info')
+    const offEmulatorExit = api.on('emulator-exit', ({ name, failed }) => {
+      toast(i18n.t(failed ? 'emulator_failed' : 'emulator_exited', { name }), failed ? 'error' : 'info')
       refreshAvds()
     })
     return () => { offLog?.(); offProgress?.(); offEmulatorLog?.(); offEmulatorExit?.() }
@@ -152,11 +153,13 @@ export default function App() {
 
   const refreshAvds = async () => {
     const list = await api.listAvds()
-    setAvds(Array.isArray(list) ? list : [])
+    const devices = Array.isArray(list) ? list : []
+    setAvds(devices)
+    setPage(current => current ?? (devices.length ? 'devices' : 'setup'))
   }
 
-  const handleLaunch = async (name, wipeData = false) => {
-    const avd = avds.find(a => a.name === name)
+  const handleLaunch = async (avd, wipeData = false) => {
+    const { name, source } = avd
     const accel = localStorage.getItem('emulator_accel') || 'whpx'
     const gpuMode = avd?.gpu || localStorage.getItem('emulator_gpu') || 'host'
     let quickBootVal = localStorage.getItem(`emulator_quick_boot_${name}`)
@@ -187,6 +190,7 @@ export default function App() {
 
     const result = await api.launchAvd({
       name,
+      source,
       gpuMode,
       accel,
       quickBoot,
@@ -201,25 +205,28 @@ export default function App() {
     })
     if (result.ok) {
       toast(t('emulator_launching', { name }), 'info')
-      setTimeout(refreshAvds, 500)
+      await refreshAvds()
     } else {
       toast(t('emulator_launch_failed', { error: result.error ?? t('unknown_error') }), 'error')
     }
   }
 
-  const handleStop = async (name) => {
-    const result = await api.stopAvd({ name })
+  const handleStop = async (avd) => {
+    const result = await api.stopAvd(avd)
     if (result.ok) {
-      toast(t('emulator_stopped', { name }), 'info')
       setTimeout(refreshAvds, 500)
+    } else {
+      toast(t('device_stop_failed', { error: result.error || t('unknown_error') }), 'error')
     }
   }
 
-  const handleDelete = async (name) => {
-    const result = await api.deleteAvd({ name })
+  const handleDelete = async (avd) => {
+    const result = await api.deleteAvd(avd)
     if (result.ok) {
-      toast(t('device_deleted', { name }), 'success')
+      toast(t('device_deleted', { name: avd.name }), 'success')
       refreshAvds()
+    } else {
+      toast(t('device_delete_failed', { error: result.error || t('unknown_error') }), 'error')
     }
   }
 
@@ -299,6 +306,7 @@ export default function App() {
   }
 
   const allReady = status?.jdk_installed && status?.cmdline_installed && status?.emulator_installed
+  const hasSystemDevices = avds.some(avd => avd.source === 'system')
 
   const StatusDot = ({ ok }) => (
     <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>
@@ -331,8 +339,8 @@ export default function App() {
 
         {status && (
           <div className="flex gap-2 items-center" style={{ fontSize: 11, WebkitAppRegion: 'no-drag' }}>
-            {allReady
-              ? <span className="badge badge-ok flex items-center gap-1"><CheckCircle2 size={10} /> {t('ready')}</span>
+            {allReady || hasSystemDevices
+              ? <span className="badge badge-ok flex items-center gap-1"><CheckCircle2 size={10} /> {t(allReady ? 'ready' : 'device_source_system')}</span>
               : <span className="badge badge-warn flex items-center gap-1"><AlertTriangle size={10} /> {t('setup_required')}</span>
             }
             {avds.filter(a => a.running).length > 0 && (
@@ -455,7 +463,7 @@ export default function App() {
                   <button
                     className="btn btn-ghost btn-sm flex items-center gap-1"
                     onClick={handleOptimizeApps}
-                    disabled={optimizing || avds.filter(a => a.running).length === 0}
+                    disabled={optimizing || avds.filter(a => a.running).length !== 1}
                     title={t('devices_optimize_tooltip')}
                   >
                     <Zap size={12} />
@@ -469,7 +477,7 @@ export default function App() {
                 </div>
               </div>
 
-              {!allReady && (
+              {!allReady && avds.length === 0 && (
                 <div className="alert alert-warn flex items-center gap-2" style={{ marginBottom: 20 }}>
                   <AlertTriangle size={14} style={{ flexShrink: 0 }} />
                   <span>{t('devices_setup_required')}</span>
@@ -491,12 +499,12 @@ export default function App() {
               ) : (
                 <div className="grid-auto">
                   {avds.map(avd => (
-                    <DeviceCard key={avd.name} avd={avd}
+                    <DeviceCard key={avd.id} avd={avd}
                       onLaunch={handleLaunch}
                       onStop={handleStop}
                       onDelete={handleDelete}
                       onEdit={(target) => setEditingAvd(target)}
-                      logs={emulatorLogs}
+                      logs={emulatorLogs[avd.id]?.lines}
                     />
                   ))}
                 </div>
@@ -775,8 +783,8 @@ export default function App() {
               )}
 
               {Object.keys(emulatorLogs).length > 0 ? (
-                Object.entries(emulatorLogs).map(([name, lines]) => (
-                  <div key={name} style={{ marginBottom: 16 }}>
+                Object.entries(emulatorLogs).map(([id, { name, lines }]) => (
+                  <div key={id} style={{ marginBottom: 16 }}>
                     <div className="card-title flex items-center gap-2" style={{ marginBottom: 8 }}>
                       <Smartphone size={14} />
                       {name}

@@ -301,7 +301,7 @@ export function CreateAvdDialog({ onClose, onCreated, gpus, status }) {
   )
 }
 
-export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
+export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs = [] }) {
   const { t } = useTranslation()
   const [launching, setLaunching] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -310,18 +310,18 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [showConfirmWipe, setShowConfirmWipe] = useState(false)
 
-  const handleLaunch = async () => { setLaunching(true); await onLaunch(avd.name, false); setLaunching(false) }
+  const handleLaunch = async () => { setLaunching(true); await onLaunch(avd, false); setLaunching(false) }
   const handleWipeLaunch = () => {
     setShowConfirmWipe(true)
   }
-  const handleStop = async () => { setStopping(true); await onStop(avd.name); setStopping(false) }
+  const handleStop = async () => { setStopping(true); await onStop(avd); setStopping(false) }
   
   const handleDelete = () => {
     setShowConfirmDelete(true)
   }
 
   const handleCopyLogs = () => {
-    const logText = (logs[avd.name] || []).join('\n')
+    const logText = logs.join('\n')
     navigator.clipboard.writeText(logText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -329,17 +329,18 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
 
   const apiLevel = avd.api?.match(/android-(\d+)/)?.[1] || '?'
   const imgType = avd.api?.includes('playstore') ? 'Play Store' : avd.api?.includes('google_apis') ? 'Google APIs' : 'AOSP'
+  const active = avd.starting || avd.running
+  const gpu = avd.compatibility_mode ? 'software' : avd.gpu || 'auto'
 
   const getGpuBadge = () => {
-    const mode = avd.gpu || 'auto';
-    if (mode === 'host') {
+    if (gpu === 'host') {
       return (
         <span className="badge" style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', borderColor: 'rgba(239,68,68,0.25)', fontWeight: 600, fontSize: 10 }}>
           <Zap size={10} style={{ marginRight: 4 }} /> {t('device_gpu_host_badge')}
         </span>
       )
     }
-    if (mode === 'software') {
+    if (gpu === 'software') {
       return (
         <span className="badge" style={{ background: 'rgba(156,163,175,0.12)', color: '#9ca3af', borderColor: 'rgba(156,163,175,0.25)', fontWeight: 500, fontSize: 10 }}>
           <Monitor size={10} style={{ marginRight: 4 }} /> {t('device_gpu_software_badge')}
@@ -360,22 +361,23 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
           <div className="device-name">{avd.name.replace(/_/g, ' ')}</div>
           <div className="device-gpu-info">
             <Monitor size={12} style={{ marginRight: 6 }} />
-            <span>{t('device_specs', { gpu: avd.gpu || 'auto', cores: avd.cores || '4', ram: avd.ram ? Math.round(Number(avd.ram) / 1024) : 4 })}</span>
+            <span>{t('device_specs', { gpu, cores: avd.cores || '4', ram: avd.ram ? Math.round(Number(avd.ram) / 1024) : 4 })}</span>
           </div>
         </div>
-        <span className={`badge ${avd.running ? 'badge-running' : 'badge-stopped'}`}>
+        <span className={`badge ${avd.starting ? 'badge-warn' : avd.running ? 'badge-running' : 'badge-stopped'}`}>
           {avd.running && <span className="dot" />}
-          {t(avd.running ? 'running' : 'device_stopped')}
+          {t(avd.starting ? 'device_starting' : avd.running ? 'running' : 'device_stopped')}
         </span>
       </div>
       <div className="device-meta">
         <span className="device-spec">API {apiLevel}</span>
         <span className="device-spec">{imgType}</span>
-        <span className="device-spec">x86_64</span>
+        {avd.arch && <span className="device-spec">{avd.arch}</span>}
+        {avd.source === 'system' && <span className="device-spec">{t('device_source_system')}</span>}
         {getGpuBadge()}
       </div>
       <div className="device-actions">
-        {!avd.running ? (
+        {!active ? (
           <>
             <button className="btn btn-success btn-sm" onClick={handleLaunch} disabled={launching}>
               {launching ? <><Spinner size={12} />{t('device_starting')}</> : <><Play size={12} style={{ marginRight: 6 }} />{t('device_launch')}</>}
@@ -392,23 +394,23 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
         <button className="btn btn-ghost btn-sm" onClick={() => setShowLogs(v => !v)}>
           {showLogs ? <><EyeOff size={12} style={{ marginRight: 6 }} />{t('device_hide_logs')}</> : <><Eye size={12} style={{ marginRight: 6 }} />{t('device_logs')}</>}
         </button>
-        {(logs[avd.name] || []).length > 0 && (
+        {logs.length > 0 && (
           <button className="btn btn-ghost btn-sm" onClick={handleCopyLogs} style={{ color: copied ? 'var(--text-green)' : 'inherit' }}>
             {copied ? <><Save size={12} style={{ marginRight: 6 }} />{t('device_logs_copied')}</> : <><Copy size={12} style={{ marginRight: 6 }} />{t('device_copy_logs')}</>}
           </button>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => onEdit(avd)}
-            title={t('device_edit_tooltip')} disabled={avd.running}>
+            title={t('device_edit_tooltip')} disabled={active}>
             <Pencil size={12} />
           </button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={handleDelete}
-            title={t('device_delete_tooltip')} style={{ color: '#ef4444' }} disabled={avd.running}>
+            title={t('device_delete_tooltip')} style={{ color: '#ef4444' }} disabled={active}>
             <Trash2 size={12} />
           </button>
         </div>
       </div>
-      {showLogs && <ConsoleLog lines={logs[avd.name] || []} />}
+      {showLogs && <ConsoleLog lines={logs} />}
 
       {showConfirmDelete && (
         <div className="modal-overlay" onClick={() => setShowConfirmDelete(false)}>
@@ -426,7 +428,7 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
                <button className="btn btn-ghost" onClick={() => setShowConfirmDelete(false)}>{t('cancel')}</button>
                <button className="btn btn-danger" onClick={async () => {
                  setShowConfirmDelete(false)
-                 await onDelete(avd.name)
+                 await onDelete(avd)
                }} style={{ background: '#ef4444', color: '#fff' }}>
                  <Trash2 size={12} style={{ marginRight: 6 }} /> {t('device_delete_permanently')}
                </button>
@@ -452,7 +454,7 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
                <button className="btn btn-primary" onClick={async () => {
                  setShowConfirmWipe(false)
                  setLaunching(true)
-                 await onLaunch(avd.name, true)
+                 await onLaunch(avd, true)
                  setLaunching(false)
                }} style={{ background: '#fbbf24', color: '#09090b', border: 'none' }}>
                  <Zap size={12} style={{ marginRight: 6 }} /> {t('device_wipe_boot_confirm')}
@@ -467,6 +469,7 @@ export function DeviceCard({ avd, onLaunch, onStop, onDelete, onEdit, logs }) {
 
 export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
   const { t } = useTranslation()
+  const isSystem = avd.source === 'system'
   const apiLower = (avd.api || '').toLowerCase()
   const targetLower = (avd.target || '').toLowerCase()
   const isWear = apiLower.includes('wear') || targetLower.includes('wear')
@@ -534,6 +537,7 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
       : editResolution
     const result = await api.updateAvdConfig({
       name: avd.name,
+      source: avd.source,
       cores: String(cores),
       ram: String(ram),
       gpu: gpuMode,
@@ -543,10 +547,12 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
     setSaving(false)
     if (result.ok) {
       // Save device-specific preferences
-      localStorage.setItem(`emulator_quick_boot_${avd.name}`, String(quickBoot))
-      localStorage.setItem(`emulator_boot_anim_${avd.name}`, String(bootAnim))
-      localStorage.setItem(`emulator_ultra_gaming_${avd.name}`, String(ultraGaming))
-      localStorage.setItem(`emulator_speed_mode_${avd.name}`, String(speedMode))
+      if (!isSystem) {
+        localStorage.setItem(`emulator_quick_boot_${avd.name}`, String(quickBoot))
+        localStorage.setItem(`emulator_boot_anim_${avd.name}`, String(bootAnim))
+        localStorage.setItem(`emulator_ultra_gaming_${avd.name}`, String(ultraGaming))
+        localStorage.setItem(`emulator_speed_mode_${avd.name}`, String(speedMode))
+      }
       onSaved()
     } else {
       alert(t('device_update_failed', { error: result.error ?? t('unknown_error') }))
@@ -657,46 +663,50 @@ export function EditAvdDialog({ avd, gpus, onClose, onSaved }) {
             </>
           )}
 
-          <div className="divider" style={{ margin: '8px 0' }} />
+          {!isSystem && (
+            <>
+              <div className="divider" style={{ margin: '8px 0' }} />
 
-          <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
-            <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_quick_boot')}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_quick_boot_description')}</div>
-            </div>
-            <div className={`toggle ${quickBoot ? 'on' : ''}`} onClick={() => setQuickBoot(!quickBoot)} />
-          </div>
+              <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
+                <div style={{ flex: 1, paddingRight: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_quick_boot')}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_quick_boot_description')}</div>
+                </div>
+                <div className={`toggle ${quickBoot ? 'on' : ''}`} onClick={() => setQuickBoot(!quickBoot)} />
+              </div>
 
-          <div className="divider" style={{ margin: '4px 0' }} />
+              <div className="divider" style={{ margin: '4px 0' }} />
 
-          <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
-            <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Monitor size={12} style={{ marginRight: 6 }} /> {t('device_boot_animation')}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_boot_animation_description')}</div>
-            </div>
-            <div className={`toggle ${bootAnim ? 'on' : ''}`} onClick={() => setBootAnim(!bootAnim)} />
-          </div>
+              <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
+                <div style={{ flex: 1, paddingRight: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2 }}><Monitor size={12} style={{ marginRight: 6 }} /> {t('device_boot_animation')}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_boot_animation_description')}</div>
+                </div>
+                <div className={`toggle ${bootAnim ? 'on' : ''}`} onClick={() => setBootAnim(!bootAnim)} />
+              </div>
 
-          <div className="divider" style={{ margin: '4px 0' }} />
+              <div className="divider" style={{ margin: '4px 0' }} />
 
-          <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
-            <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_ultra_gaming')}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_ultra_gaming_description')}</div>
-            </div>
-            <div className={`toggle ${ultraGaming ? 'on' : ''}`} onClick={() => setUltraGaming(!ultraGaming)} />
-          </div>
+              <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
+                <div style={{ flex: 1, paddingRight: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_ultra_gaming')}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_ultra_gaming_description')}</div>
+                </div>
+                <div className={`toggle ${ultraGaming ? 'on' : ''}`} onClick={() => setUltraGaming(!ultraGaming)} />
+              </div>
 
-          <div className="divider" style={{ margin: '4px 0' }} />
+              <div className="divider" style={{ margin: '4px 0' }} />
 
-          <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
-            <div style={{ flex: 1, paddingRight: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_speed_mode')}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_speed_mode_description')}</div>
-            </div>
-            <div className={`toggle ${speedMode ? 'on' : ''}`} onClick={() => setSpeedMode(!speedMode)} />
-          </div>
-          
+              <div className="flex items-center justify-between" style={{ padding: '2px 0' }}>
+                <div style={{ flex: 1, paddingRight: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 2, color: 'var(--text-accent, #60a5fa)' }}><Zap size={12} style={{ marginRight: 6 }} /> {t('device_speed_mode')}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('device_speed_mode_description')}</div>
+                </div>
+                <div className={`toggle ${speedMode ? 'on' : ''}`} onClick={() => setSpeedMode(!speedMode)} />
+              </div>
+            </>
+          )}
+
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={onClose} disabled={saving}>{t('cancel')}</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>

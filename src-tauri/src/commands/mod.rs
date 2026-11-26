@@ -42,7 +42,17 @@ pub fn is_download_cancelled() -> bool {
 }
 
 // ─── Shared global state ──────────────────────────────────────────────────────
-pub static RUNNING_AVDS: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+#[derive(Clone, Copy)]
+struct RunningAvd {
+    pid: u32,
+    boot_completed: bool,
+    stop_requested: bool,
+}
+
+fn running_avds() -> &'static Mutex<HashMap<String, RunningAvd>> {
+    static RUNNING_AVDS: OnceLock<Mutex<HashMap<String, RunningAvd>>> = OnceLock::new();
+    RUNNING_AVDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 // ─── Shared macros ────────────────────────────────────────────────────────────
 /// Create a std::process::Command with CREATE_NO_WINDOW on Windows.

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use super::paths::AvdSource;
 
 // ─── Structs ──────────────────────────────────────────────────────────────────
 #[derive(Serialize, Deserialize, Clone)]
@@ -33,6 +34,8 @@ pub struct InstallStatus {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AvdInfo {
+    pub id: String,
+    pub source: AvdSource,
     pub name: String,
     pub path: String,
     pub target: String,
@@ -40,6 +43,11 @@ pub struct AvdInfo {
     pub ram: String,
     pub cores: String,
     pub gpu: String,
+    pub arch: String,
+    pub compatibility_mode: bool,
+    pub resolution: Option<String>,
+    pub dpi: String,
+    pub starting: bool,
     pub running: bool,
 }
 

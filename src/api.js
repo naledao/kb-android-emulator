@@ -35,9 +35,10 @@ export const fetchSdkPackages = () => invoke('fetch_sdk_packages')
 // ─── AVD Management ───────────────────────────────────────────────────────────
 export const listAvds = () => invoke('list_avds')
 export const createAvd = (opts) => invoke('create_avd', { options: opts })
-export const deleteAvd = (opts) => invoke('delete_avd', { name: opts.name })
+export const deleteAvd = ({ name, source }) => invoke('delete_avd', { name, source })
 export const launchAvd = (opts) => invoke('launch_avd', {
   name: opts.name,
+  source: opts.source,
   gpuMode: opts.gpuMode,
   accel: opts.accel,
   quickBoot: opts.quickBoot,
@@ -50,10 +51,11 @@ export const launchAvd = (opts) => invoke('launch_avd', {
   speedMode: opts.speedMode,
   rawLaunch: opts.rawLaunch,
 })
-export const stopAvd = (opts) => invoke('stop_avd', { name: opts.name })
+export const stopAvd = ({ name, source }) => invoke('stop_avd', { name, source })
 export const openFolder = (opts) => invoke('open_folder', { folderPath: opts.folderPath })
 export const updateAvdConfig = (opts) => invoke('update_avd_config', {
   name: opts.name,
+  source: opts.source,
   cores: opts.cores,
   ram: opts.ram,
   gpu: opts.gpu,

@@ -7,64 +7,64 @@ use super::emit_log;
 #[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
-use super::paths::{avd_dir, cmdline_dir, build_env};
+use super::paths::{android_tool, avd_dir, build_env, cmdline_dir, ini_value, AvdSource};
 use super::types::{AvdInfo, CommandResult, CreateAvdOptions};
-use super::RUNNING_AVDS;
+use std::io::Write;
 use std::process::Stdio;
-
-fn get_running_avds() -> &'static std::sync::Mutex<std::collections::HashMap<String, bool>> {
-    RUNNING_AVDS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
 
 // ─── List AVDs ────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn list_avds() -> Vec<AvdInfo> {
-    let avd = avd_dir();
-    if !avd.exists() { return vec![]; }
-
-    let entries = match std::fs::read_dir(&avd) {
-        Ok(e) => e,
-        Err(_) => return vec![],
-    };
-
     let mut avds = vec![];
-    for entry in entries.filter_map(|e| e.ok()) {
-        let fname = entry.file_name().to_string_lossy().to_string();
-        if !fname.ends_with(".ini") || fname.contains("hardware") || fname == "emu-update-last-check.ini" { continue; }
+    let local_home = avd_dir().canonicalize().ok();
+    for source in [AvdSource::Local, AvdSource::System] {
+        let Some(home) = source.avd_home() else { continue };
+        if source == AvdSource::System && local_home.is_some() && home.canonicalize().ok() == local_home {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(home) else { continue };
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str().and_then(|file| file.strip_suffix(".ini")) else { continue };
+            let Some(avd) = source.locate(name) else { continue };
+            let value = |key| ini_value(&avd.config, key).to_string();
+            let width = value("hw.lcd.width");
+            let height = value("hw.lcd.height");
+            let resolution = (!width.is_empty() && !height.is_empty()).then(|| format!("{width}x{height}"));
+            let id = source.id(name);
+            let process = super::running_avds().lock().unwrap().get(&id).copied();
 
-        let name = fname.trim_end_matches(".ini").to_string();
-        let ini_path = avd.join(&fname);
-        let config_path = avd.join(format!("{}.avd", name)).join("config.ini");
-
-        let ini_content = std::fs::read_to_string(&ini_path).unwrap_or_default();
-        let config_content = std::fs::read_to_string(&config_path).unwrap_or_default();
-
-        let get_val = |content: &str, key: &str| -> String {
-            for line in content.lines() {
-                if let Some(rest) = line.strip_prefix(&format!("{}=", key)) {
-                    return rest.trim().to_string();
-                }
-            }
-            String::new()
-        };
-
-        let is_running = {
-            let map = get_running_avds().lock().unwrap();
-            map.get(&name).copied().unwrap_or(false)
-        };
-
-        avds.push(AvdInfo {
-            name,
-            path: get_val(&ini_content, "path"),
-            target: get_val(&config_content, "tag.display"),
-            api: get_val(&config_content, "image.sysdir.1"),
-            ram: get_val(&config_content, "hw.ramSize"),
-            cores: get_val(&config_content, "hw.cpu.ncore"),
-            gpu: get_val(&config_content, "hw.gpu.mode"),
-            running: is_running,
-        });
+            avds.push(AvdInfo {
+                id,
+                source,
+                name: name.to_string(),
+                path: avd.config_path.parent().unwrap().to_string_lossy().into_owned(),
+                target: value("tag.display"),
+                api: value("image.sysdir.1"),
+                ram: ram_megabytes(&value("hw.ramSize")),
+                cores: value("hw.cpu.ncore"),
+                gpu: value("hw.gpu.mode"),
+                arch: value("abi.type"),
+                compatibility_mode: avd.use_compatible_graphics(source),
+                resolution,
+                dpi: value("hw.lcd.density"),
+                starting: process.is_some_and(|avd| !avd.boot_completed),
+                running: process.is_some_and(|avd| avd.boot_completed),
+            });
+        }
     }
+    avds.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
     avds
+}
+
+fn ram_megabytes(value: &str) -> String {
+    let upper = value.to_ascii_uppercase();
+    if let Some(gigabytes) = upper.strip_suffix('G') {
+        if let Ok(amount) = gigabytes.parse::<u64>() {
+            return amount.saturating_mul(1024).to_string();
+        }
+    }
+    upper.trim_end_matches('M').to_string()
 }
 
 // ─── Create AVD ───────────────────────────────────────────────────────────────
@@ -231,22 +231,29 @@ pub fn build_perf_config(opts: &CreateAvdOptions) -> Vec<(String, String)> {
 
 // ─── Delete AVD ───────────────────────────────────────────────────────────────
 #[tauri::command]
-pub async fn delete_avd(name: String, window: Window) -> CommandResult {
-    #[cfg(windows)]
-    let bat = cmdline_dir().join("bin").join("avdmanager.bat");
-    #[cfg(not(windows))]
-    let bat = cmdline_dir().join("bin").join("avdmanager");
-
-    let env = build_env();
-
-    #[cfg(windows)]
-    let cmd_str = format!("& '{}' delete avd --name '{}'", bat.display(), name);
+pub async fn delete_avd(name: String, source: Option<AvdSource>, window: Window) -> CommandResult {
+    let source = source.unwrap_or_default();
+    let Some(avd) = source.locate(&name) else {
+        return CommandResult { ok: false, error: Some("AVD not found".into()), output: None };
+    };
+    if avd.in_use(source, &name) {
+        return CommandResult { ok: false, error: Some("AVD is in use".into()), output: None };
+    }
+    let Some(sdk) = source.sdk() else {
+        return CommandResult { ok: false, error: Some("Android SDK not found".into()), output: None };
+    };
+    let bat = android_tool(&sdk, "cmdline-tools/latest/bin", "avdmanager", "bat");
+    if !bat.is_file() {
+        return CommandResult { ok: false, error: Some("Android SDK command-line tools (avdmanager) not found".into()), output: None };
+    }
 
     #[cfg(windows)]
     let mut cmd = {
         let mut c = tokio::process::Command::new("powershell");
         c.creation_flags(0x08000000);
-        c.args(["-NoProfile", "-Command", &cmd_str]);
+        c.args(["-NoProfile", "-Command", "& $env:KB_AVDMANAGER delete avd --name $env:KB_AVD_NAME; exit $LASTEXITCODE"])
+            .env("KB_AVDMANAGER", &bat)
+            .env("KB_AVD_NAME", &name);
         c
     };
 
@@ -257,8 +264,13 @@ pub async fn delete_avd(name: String, window: Window) -> CommandResult {
         c
     };
 
-    cmd.envs(&env)
-       .current_dir(cmdline_dir())
+    if source == AvdSource::Local {
+        cmd.envs(build_env());
+    }
+    cmd.env("ANDROID_HOME", &sdk)
+       .env("ANDROID_SDK_ROOT", &sdk)
+       .env("ANDROID_AVD_HOME", &avd.home)
+       .current_dir(bat.parent().unwrap())
        .stdin(Stdio::null())
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
@@ -273,8 +285,13 @@ pub async fn delete_avd(name: String, window: Window) -> CommandResult {
         Err(e) => return CommandResult { ok: false, error: Some(e.to_string()), output: None },
     };
 
-    emit_log(&window, "log_avd_deleted", "info", json!({ "name": name }));
-    CommandResult { ok: out.status.success(), error: None, output: None }
+    if out.status.success() {
+        emit_log(&window, "log_avd_deleted", "info", json!({ "name": name }));
+        CommandResult { ok: true, error: None, output: None }
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        CommandResult { ok: false, error: Some(stderr.trim().to_string()), output: None }
+    }
 }
 
 // ─── Auto-tune heap size before launch ────────────────────────────────────────
@@ -408,21 +425,23 @@ pub fn clean_stale_locks(name: &str) {
 #[tauri::command]
 pub fn update_avd_config(
     name: String,
+    source: Option<AvdSource>,
     cores: String,
     ram: String,
     gpu: String,
     resolution: Option<String>,
     dpi: Option<String>,
 ) -> CommandResult {
-    let config_path = avd_dir().join(format!("{}.avd", name)).join("config.ini");
-    if !config_path.exists() {
+    let source = source.unwrap_or_default();
+    let Some(avd) = source.locate(&name) else {
         return CommandResult { ok: false, error: Some("AVD config.ini not found".to_string()), output: None };
-    }
-    
-    let content = match std::fs::read_to_string(&config_path) {
-        Ok(c) => c,
-        Err(e) => return CommandResult { ok: false, error: Some(e.to_string()), output: None },
     };
+    if avd.in_use(source, &name) {
+        return CommandResult { ok: false, error: Some("AVD is in use".into()), output: None };
+    }
+    let config_path = avd.config_path;
+    let content = avd.config;
+    let enable_gpu = source == AvdSource::System && ini_value(&content, "hw.gpu.mode") != gpu;
 
     // Detect Device Type
     let mut is_wear = false;
@@ -503,6 +522,9 @@ pub fn update_avd_config(
     
     for line in content.lines() {
         let trimmed = line.trim();
+        if enable_gpu && trimmed.starts_with("hw.gpu.enabled=") {
+            continue;
+        }
         if trimmed.starts_with("hw.cpu.ncore=") {
             new_lines.push(format!("hw.cpu.ncore={}", final_cores));
             updated_cores = true;
@@ -512,7 +534,7 @@ pub fn update_avd_config(
         } else if trimmed.starts_with("hw.gpu.mode=") {
             new_lines.push(format!("hw.gpu.mode={}", gpu));
             updated_gpu = true;
-        } else if trimmed.starts_with("vm.heapSize=") {
+        } else if source == AvdSource::Local && trimmed.starts_with("vm.heapSize=") {
             new_lines.push(format!("vm.heapSize={}", heap_size));
             updated_heap = true;
         } else if trimmed.starts_with("hw.lcd.width=") {
@@ -551,7 +573,8 @@ pub fn update_avd_config(
     if !updated_cores { new_lines.push(format!("hw.cpu.ncore={}", final_cores)); }
     if !updated_ram { new_lines.push(format!("hw.ramSize={}", final_ram)); }
     if !updated_gpu { new_lines.push(format!("hw.gpu.mode={}", gpu)); }
-    if !updated_heap { new_lines.push(format!("vm.heapSize={}", heap_size)); }
+    if enable_gpu { new_lines.push("hw.gpu.enabled=yes".into()); }
+    if source == AvdSource::Local && !updated_heap { new_lines.push(format!("vm.heapSize={}", heap_size)); }
     if !is_wear && resolution.is_some() {
         if !updated_width { new_lines.push(format!("hw.lcd.width={}", w)); }
         if !updated_height { new_lines.push(format!("hw.lcd.height={}", h)); }
@@ -561,7 +584,17 @@ pub fn update_avd_config(
         new_lines.push(format!("hw.lcd.density={}", density_val));
     }
     
-    match std::fs::write(&config_path, new_lines.join("\n")) {
+    let temp_path = config_path.with_extension(format!("kb-{}.tmp", std::process::id()));
+    let result = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp_path).and_then(|mut file| {
+        let write = file.write_all(new_lines.join("\n").as_bytes());
+        drop(file);
+        let result = write.and_then(|()| std::fs::rename(&temp_path, &config_path));
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp_path);
+        }
+        result
+    });
+    match result {
         Ok(_) => CommandResult { ok: true, error: None, output: None },
         Err(e) => CommandResult { ok: false, error: Some(e.to_string()), output: None },
     }

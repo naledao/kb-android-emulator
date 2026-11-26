@@ -1,3 +1,4 @@
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::Stdio;
 use serde_json::json;
@@ -6,13 +7,9 @@ use tauri::{Emitter, Window};
 use super::emit_log;
 
 use super::avd::{auto_repair_special_configs, auto_tune_heap_before_launch, clean_stale_locks};
-use super::paths::{avd_dir, emulator_dir, sdk_dir, build_env};
+use super::paths::{android_tool, build_env, AvdSource};
 use super::types::CommandResult;
-use super::RUNNING_AVDS;
-
-fn get_running_avds() -> &'static std::sync::Mutex<std::collections::HashMap<String, bool>> {
-    RUNNING_AVDS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
+use super::{running_avds, RunningAvd};
 
 // Windows-only: raw Win32 API for process priority elevation
 #[cfg(windows)]
@@ -32,6 +29,7 @@ mod win32_priority {
 #[tauri::command]
 pub fn launch_avd(
     name: String,
+    source: Option<AvdSource>,
     gpu_mode: Option<String>,
     accel: Option<String>,
     quick_boot: Option<bool>,
@@ -45,49 +43,51 @@ pub fn launch_avd(
     raw_launch: Option<bool>,
     window: Window,
 ) -> CommandResult {
+    let source = source.unwrap_or_default();
+    let id = source.id(&name);
+    let Some(avd) = source.locate(&name) else {
+        return CommandResult { ok: false, error: Some("AVD not found".into()), output: None };
+    };
+    if avd.in_use(source, &name) {
+        return CommandResult { ok: false, error: Some("AVD is in use".into()), output: None };
+    }
+    let Some(sdk) = source.sdk() else {
+        return CommandResult { ok: false, error: Some("Android SDK not found".into()), output: None };
+    };
+    let emulator_exe = android_tool(&sdk, "emulator", "emulator", "exe");
+    if !emulator_exe.is_file() {
+        return CommandResult {
+            ok: false,
+            error: Some("Emulator not installed. Install it from SDK Manager first.".into()),
+            output: None,
+        };
+    }
+
     // Detect Device Type
     let mut is_wear = false;
     let mut is_tv = false;
     let mut is_auto = false;
-    let config_path = avd_dir().join(format!("{}.avd", name)).join("config.ini");
-    if config_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("tag.id=") {
-                    let id = trimmed.split('=').nth(1).unwrap_or("").trim();
-                    if id.contains("wear") { is_wear = true; }
-                    if id.contains("tv") || id.contains("google-tv") { is_tv = true; }
-                    if id.contains("automotive") { is_auto = true; }
-                }
-                if trimmed.starts_with("image.sysdir.1=") {
-                    let sysdir = trimmed.split('=').nth(1).unwrap_or("").trim();
-                    if sysdir.contains("wear") { is_wear = true; }
-                    if sysdir.contains("android-tv") || sysdir.contains("google-tv") { is_tv = true; }
-                    if sysdir.contains("android-automotive") { is_auto = true; }
-                }
-            }
+    for line in avd.config.lines() {
+        let trimmed = line.trim();
+        if let Some(tag) = trimmed.strip_prefix("tag.id=") {
+            is_wear |= tag.contains("wear");
+            is_tv |= tag.contains("tv");
+            is_auto |= tag.contains("automotive");
+        }
+        if let Some(sysdir) = trimmed.strip_prefix("image.sysdir.1=") {
+            is_wear |= sysdir.contains("wear");
+            is_tv |= sysdir.contains("android-tv") || sysdir.contains("google-tv");
+            is_auto |= sysdir.contains("android-automotive");
         }
     }
 
-    let is_raw = raw_launch.unwrap_or(false) || is_wear || is_tv || is_auto;
+    let is_raw = source == AvdSource::System || raw_launch.unwrap_or(false) || is_wear || is_tv || is_auto;
 
     if !is_raw {
         auto_repair_special_configs(&name);
     }
-    clean_stale_locks(&name);
-
-    #[cfg(windows)]
-    let emulator_exe = emulator_dir().join("emulator.exe");
-    #[cfg(not(windows))]
-    let emulator_exe = emulator_dir().join("emulator");
-
-    if !emulator_exe.exists() {
-        return CommandResult {
-            ok: false,
-            error: Some("Emulator not installed. Install it from SDK Manager first.".to_string()),
-            output: None,
-        };
+    if source == AvdSource::Local {
+        clean_stale_locks(&name);
     }
 
     let ram_size = if !is_raw {
@@ -97,12 +97,12 @@ pub fn launch_avd(
     };
 
     // Auto-repair AVD .ini path if it was moved/migrated
-    let ini_path = avd_dir().join(format!("{}.ini", name));
-    if ini_path.exists() {
+    let ini_path = avd.home.join(format!("{}.ini", name));
+    if source == AvdSource::Local {
         if let Ok(content) = std::fs::read_to_string(&ini_path) {
             let mut new_lines = vec![];
             let mut changed = false;
-            let expected_path = avd_dir().join(format!("{}.avd", name));
+            let expected_path = avd.config_path.parent().unwrap();
             for line in content.lines() {
                 if line.starts_with("path=") {
                     let current_path = line.trim_start_matches("path=");
@@ -120,9 +120,6 @@ pub fn launch_avd(
         }
     }
 
-    let env = build_env();
-    let avd_home = avd_dir().to_string_lossy().to_string();
-
     let mut args = vec![];
 
     if is_raw {
@@ -134,6 +131,10 @@ pub fn launch_avd(
         );
         args.push("-avd".to_string());
         args.push(name.clone());
+        if avd.use_compatible_graphics(source) {
+            args.extend(["-gpu", "swiftshader", "-feature", "-Vulkan", "-no-snapshot"].map(str::to_owned));
+            emit_log(&window, "log_avd_compatible_graphics", "info", json!({ "name": name }));
+        }
     } else {
         let mut gpu = gpu_mode.unwrap_or_else(|| "auto".to_string());
         
@@ -216,10 +217,6 @@ pub fn launch_avd(
             args.push("-read-only".to_string());
         }
 
-        if let Some(true) = wipe_data {
-            args.push("-wipe-data".to_string());
-        }
-
         if let Some(false) = boot_anim {
             args.push("-no-boot-anim".to_string());
         }
@@ -244,16 +241,26 @@ pub fn launch_avd(
         }
     }
 
-    let emulator_cwd = emulator_dir();
-    let mut cmd = std::process::Command::new(&emulator_exe);
-    cmd.current_dir(&emulator_cwd)
-        .args(&args)
-        .env("ANDROID_AVD_HOME", &avd_home)
-        .env("ANDROID_EMULATOR_HOME", &avd_home)
-        .envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    if wipe_data == Some(true) {
+        args.push("-wipe-data".to_string());
+    }
 
+    let mut cmd = std::process::Command::new(&emulator_exe);
+    if source == AvdSource::Local {
+        cmd.envs(build_env());
+    }
+    cmd.current_dir(emulator_exe.parent().unwrap())
+        .args(&args)
+        .env("ANDROID_HOME", &sdk)
+        .env("ANDROID_SDK_ROOT", &sdk)
+        .env("ANDROID_AVD_HOME", &avd.home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut running = running_avds().lock().unwrap();
+    if running.contains_key(&id) {
+        return CommandResult { ok: false, error: Some("AVD is already running".into()), output: None };
+    }
     let child = cmd.spawn();
 
     match child {
@@ -272,35 +279,31 @@ pub fn launch_avd(
                 }
             }
 
-            get_running_avds().lock().unwrap().insert(name.clone(), true);
-            let name_clone = name.clone();
-            let window_clone = window.clone();
+            running.insert(id.clone(), RunningAvd { pid, boot_completed: false, stop_requested: false });
+            drop(running);
 
-            if let Some(true) = speed_mode {
-                #[cfg(windows)]
-                let adb_exe = sdk_dir().join("platform-tools").join("adb.exe");
-                #[cfg(not(windows))]
-                let adb_exe = sdk_dir().join("platform-tools").join("adb");
+            if source == AvdSource::Local && speed_mode == Some(true) && AvdSource::System.locate(&name).is_none() {
+                let adb_exe = android_tool(&sdk, "platform-tools", "adb", "exe");
 
                 let name_clone3 = name.clone();
                 let window_clone3 = window.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(4));
-                    if adb_exe.exists() {
+                    if let Some(serial) = adb_serial(&adb_exe, &name_clone3) {
                         let _ = std::process::Command::new(&adb_exe)
-                            .args(["wait-for-device"])
+                            .args(["-s", &serial, "wait-for-device"])
                             .output();
 
                         let _ = std::process::Command::new(&adb_exe)
-                            .args(["root"])
+                            .args(["-s", &serial, "root"])
                             .output();
 
                         let _ = std::process::Command::new(&adb_exe)
-                            .args(["wait-for-device"])
+                            .args(["-s", &serial, "wait-for-device"])
                             .output();
                         
                         let _ = std::process::Command::new(&adb_exe)
-                            .args(["shell", "service", "call", "SurfaceFlinger", "1008", "i32", "1"])
+                            .args(["-s", &serial, "shell", "service", "call", "SurfaceFlinger", "1008", "i32", "1"])
                             .output();
                         
                         emit_log(
@@ -313,48 +316,37 @@ pub fn launch_avd(
                 });
             }
 
-            let stdout = c.stdout.take();
-
-            if let Some(stdout_stream) = stdout {
-                std::thread::spawn(move || {
-                    use std::io::{BufRead, BufReader};
-                    use std::collections::VecDeque;
-                    let reader = BufReader::new(stdout_stream);
-                    let mut seen: VecDeque<String> = VecDeque::with_capacity(256);
-                    for line in reader.lines() {
-                        if let Ok(l) = line {
-                            let trimmed = l.trim().to_string();
-                            if trimmed.is_empty() { continue; }
-                            if seen.contains(&trimmed) { continue; }
-                            seen.push_back(trimmed.clone());
-                            if seen.len() > 256 { seen.pop_front(); }
-                            let _ = window_clone.emit(
-                                "emulator-log",
-                                serde_json::json!({ "name": name_clone, "line": trimmed }),
-                            );
-                        }
-                    }
-                });
+            if let Some(stdout) = c.stdout.take() {
+                capture_emulator_output(stdout, window.clone(), id.clone(), name.clone(), pid);
+            }
+            if let Some(stderr) = c.stderr.take() {
+                capture_emulator_output(stderr, window.clone(), id.clone(), name.clone(), pid);
+            }
+            let adb_exe = android_tool(&sdk, "platform-tools", "adb", "exe");
+            let other_source = if source == AvdSource::Local { AvdSource::System } else { AvdSource::Local };
+            if adb_exe.is_file() && other_source.locate(&name).is_none() {
+                watch_for_android_boot(adb_exe, id.clone(), name.clone(), pid);
             }
 
             let name_clone2 = name.clone();
             let window_clone2 = window.clone();
-            let avd_home_clone = avd_home.clone();
             std::thread::spawn(move || {
                 let launch_time = std::time::Instant::now();
-                let _ = c.wait();
+                let status = c.wait().ok();
                 let elapsed = launch_time.elapsed().as_secs();
-                get_running_avds().lock().unwrap().remove(&name_clone2);
+                let process = running_avds().lock().unwrap().remove(&id);
+                let failed = !process.is_some_and(|avd| avd.stop_requested)
+                    && (!process.is_some_and(|avd| avd.boot_completed)
+                        || !status.is_some_and(|status| status.success()));
 
-                if elapsed < 10 {
-                    let snapshot_dir = std::path::Path::new(&avd_home_clone)
-                        .join(format!("{}.avd", name_clone2))
-                        .join("snapshots");
-                    if snapshot_dir.exists() {
+                if elapsed < 10 && failed {
+                    let snapshot_dir = avd.config_path.with_file_name("snapshots");
+                    if source == AvdSource::Local && status.is_some_and(|status| !status.success()) && snapshot_dir.exists() {
                         let _ = std::fs::remove_dir_all(&snapshot_dir);
                         let _ = window_clone2.emit(
                             "emulator-log",
-                            serde_json::json!({
+                            json!({
+                                "id": id,
                                 "name": name_clone2,
                                 "line": "[KB] Emulator crashed immediately — corrupted snapshot auto-deleted. Please launch again for a clean cold boot."
                             }),
@@ -362,15 +354,20 @@ pub fn launch_avd(
                     } else {
                         let _ = window_clone2.emit(
                             "emulator-log",
-                            serde_json::json!({
+                            json!({
+                                "id": id,
                                 "name": name_clone2,
-                                "line": "[KB] Emulator exited unexpectedly on launch. Try Wipe & Boot if it happens again."
+                                "line": "[KB] Emulator exited unexpectedly during launch. See the preceding emulator output."
                             }),
                         );
                     }
                 }
 
-                let _ = window_clone2.emit("emulator-exit", serde_json::json!({ "name": name_clone2, "code": 0 }));
+                let _ = window_clone2.emit("emulator-exit", json!({
+                    "name": name_clone2,
+                    "failed": failed,
+                    "code": status.and_then(|status| status.code())
+                }));
             });
             CommandResult { ok: true, error: None, output: Some(pid.to_string()) }
         }
@@ -378,62 +375,132 @@ pub fn launch_avd(
     }
 }
 
+fn capture_emulator_output(stream: impl Read + Send + 'static, window: Window, id: String, name: String, pid: u32) {
+    std::thread::spawn(move || {
+        let mut seen = std::collections::VecDeque::with_capacity(256);
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            let line = line.trim().to_string();
+            if line.is_empty() || seen.contains(&line) { continue; }
+            if line.split_once('|').map_or(line.as_str(), |(_, message)| message.trim()).starts_with("Boot completed in ") {
+                mark_android_booted(&id, pid);
+            }
+            let _ = window.emit("emulator-log", json!({ "id": id, "name": name, "line": line }));
+            if seen.len() == 256 { seen.pop_front(); }
+            seen.push_back(line);
+        }
+    });
+}
+
+fn mark_android_booted(id: &str, pid: u32) {
+    if let Some(avd) = running_avds().lock().unwrap().get_mut(id).filter(|avd| avd.pid == pid) {
+        avd.boot_completed = true;
+    }
+}
+
+fn watch_for_android_boot(adb: std::path::PathBuf, id: String, name: String, pid: u32) {
+    std::thread::spawn(move || {
+        let mut serial = None;
+        for _ in 0..90 {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let process = running_avds().lock().unwrap().get(&id).copied();
+            if !process.is_some_and(|avd| avd.pid == pid && !avd.boot_completed && !avd.stop_requested) {
+                break;
+            }
+            if serial.is_none() {
+                serial = adb_serial(&adb, &name);
+            }
+            if let Some(serial) = serial.as_deref() {
+                let booted = crate::new_command!(&adb)
+                    .args(["-s", serial, "shell", "getprop", "sys.boot_completed"])
+                    .output()
+                    .is_ok_and(|output| output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "1");
+                if booted {
+                    mark_android_booted(&id, pid);
+                    break;
+                }
+            }
+        }
+    });
+}
+
 // ─── Stop AVD ─────────────────────────────────────────────────────────────────
 #[tauri::command]
-pub fn stop_avd(name: String, window: Window) -> CommandResult {
-    stop_avd_impl(name, window)
-}
-
-#[cfg(windows)]
-fn stop_avd_impl(name: String, window: Window) -> CommandResult {
-    use std::os::windows::process::CommandExt;
-    let adb_exe = sdk_dir().join("platform-tools").join("adb.exe");
-    if adb_exe.exists() {
-        let _ = std::process::Command::new(&adb_exe)
-            .creation_flags(0x08000000)
-            .args(["-s", "emulator-5554", "emu", "kill"])
-            .output();
+pub fn stop_avd(name: String, source: Option<AvdSource>, window: Window) -> CommandResult {
+    let source = source.unwrap_or_default();
+    let id = source.id(&name);
+    let pid = running_avds().lock().unwrap().get_mut(&id).map(|avd| {
+        avd.stop_requested = true;
+        avd.pid
+    });
+    let Some(pid) = pid else {
+        return CommandResult { ok: false, error: Some("AVD is not running in KB".into()), output: None };
+    };
+    let other_source = if source == AvdSource::Local { AvdSource::System } else { AvdSource::Local };
+    let stopped_with_adb = other_source.locate(&name).is_none() && source.sdk().is_some_and(|sdk| {
+        let adb = android_tool(&sdk, "platform-tools", "adb", "exe");
+        adb_serial(&adb, &name).is_some_and(|serial| {
+            crate::new_command!(&adb).args(["-s", &serial, "emu", "kill"]).output()
+                .is_ok_and(|output| output.status.success() && !String::from_utf8_lossy(&output.stdout).contains("KO:"))
+        })
+    });
+    if !stopped_with_adb {
+        let mut running = running_avds().lock().unwrap();
+        if let Some(avd) = running.get_mut(&id).filter(|avd| avd.pid == pid) {
+            if !stop_emulator_process(pid) {
+                avd.stop_requested = false;
+                return CommandResult { ok: false, error: Some("Could not stop this emulator process".into()), output: None };
+            }
+        }
     }
-    let _ = std::process::Command::new("taskkill")
-        .creation_flags(0x08000000)
-        .args(["/F", "/IM", "emulator.exe"])
-        .output();
     emit_log(&window, "log_avd_stop_sent", "info", json!({ "name": name }));
     CommandResult { ok: true, error: None, output: None }
 }
 
-#[cfg(not(windows))]
-fn stop_avd_impl(name: String, window: Window) -> CommandResult {
-    let adb_exe = sdk_dir().join("platform-tools").join("adb");
-    if adb_exe.exists() {
-        let _ = std::process::Command::new(&adb_exe)
-            .args(["-s", "emulator-5554", "emu", "kill"])
-            .output();
-    }
-    // Kill emulator process by name on Linux
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", "emulator"])
-        .output();
-    emit_log(&window, "log_avd_stop_sent", "info", json!({ "name": name }));
-    CommandResult { ok: true, error: None, output: None }
+fn stop_emulator_process(pid: u32) -> bool {
+    let pid = pid.to_string();
+    #[cfg(windows)]
+    let output = crate::new_command!("taskkill").args(["/PID", &pid, "/T", "/F"]).output();
+    #[cfg(not(windows))]
+    let output = std::process::Command::new("kill").args(["-TERM", &pid]).output();
+    output.is_ok_and(|result| result.status.success())
+}
+
+fn adb_serial(adb: &Path, name: &str) -> Option<String> {
+    let devices = crate::new_command!(adb).arg("devices").output().ok()?;
+    if !devices.status.success() { return None; }
+    let devices = String::from_utf8_lossy(&devices.stdout);
+    let mut matches = devices.lines().filter_map(|line| {
+        let (serial, state) = line.split_once('\t')?;
+        if !serial.starts_with("emulator-") || state.trim() != "device" { return None; }
+        let result = crate::new_command!(adb).args(["-s", serial, "emu", "avd", "name"]).output().ok()?;
+        (result.status.success() && String::from_utf8_lossy(&result.stdout).lines().next() == Some(name))
+            .then(|| serial.to_string())
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 // ─── Optimize Guest Apps ──────────────────────────────────────────────────────
 #[tauri::command]
 pub async fn optimize_guest_apps(window: Window) -> CommandResult {
-    #[cfg(windows)]
-    let adb_exe = sdk_dir().join("platform-tools").join("adb.exe");
-    #[cfg(not(windows))]
-    let adb_exe = sdk_dir().join("platform-tools").join("adb");
-
-    if !adb_exe.exists() {
-        return CommandResult { ok: false, error: Some("adb not found".to_string()), output: None };
-    }
+    let running = super::avd::list_avds().into_iter().filter(|avd| avd.running).collect::<Vec<_>>();
+    let [avd] = running.as_slice() else {
+        return CommandResult { ok: false, error: Some("Run exactly one AVD in KB to optimize apps".into()), output: None };
+    };
+    let Some(sdk) = avd.source.sdk() else {
+        return CommandResult { ok: false, error: Some("Android SDK not found".into()), output: None };
+    };
+    let adb_exe = android_tool(&sdk, "platform-tools", "adb", "exe");
+    let other_source = if avd.source == AvdSource::Local { AvdSource::System } else { AvdSource::Local };
+    let serial = (other_source.locate(&avd.name).is_none()).then(|| adb_serial(&adb_exe, &avd.name)).flatten();
+    let Some(serial) = serial else {
+        return CommandResult { ok: false, error: Some("Could not identify this AVD in adb".into()), output: None };
+    };
 
     emit_log(&window, "log_apps_scanning", "info", json!({}));
 
     let output = match std::process::Command::new(&adb_exe)
-        .args(["-s", "emulator-5554", "shell", "pm", "list", "packages", "-3"])
+        .args(["-s", &serial, "shell", "pm", "list", "packages", "-3"])
         .output() {
             Ok(o) => o,
             Err(e) => return CommandResult { ok: false, error: Some(format!("Failed to run adb: {}", e)), output: None },
@@ -463,7 +530,7 @@ pub async fn optimize_guest_apps(window: Window) -> CommandResult {
         emit_log(&window, "log_app_compiling", "info", json!({ "index": idx + 1, "total": total, "package": pkg }));
         
         let _ = std::process::Command::new(&adb_exe)
-            .args(["-s", "emulator-5554", "shell", "cmd", "package", "compile", "-m", "speed", "-f", pkg])
+            .args(["-s", &serial, "shell", "cmd", "package", "compile", "-m", "speed", "-f", pkg])
             .output();
     }
 
